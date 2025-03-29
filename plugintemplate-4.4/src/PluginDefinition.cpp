@@ -25,6 +25,8 @@
 #include <sstream>
 #include <shlobj.h>
 #include "CommitTree.h"
+#include <commctrl.h>
+#include <stdexcept>
 
 // GLOBALS
 
@@ -32,6 +34,15 @@ HINSTANCE g_hInst = NULL;
 std::wstring g_repoPath = L"F:\\CSI5610\\Repo";
 std::shared_ptr<CommitNode> g_commitTree = nullptr;
 int g_commitCounter = 1;
+
+struct TimelineData {
+    std::vector<std::pair<int, std::wstring>> commits; // commit number and file name
+    std::wstring folderPath; // repo folder
+};
+
+// Function Declerations
+void InitializeCommitTree(const std::wstring& repoFolder);
+
 
 //
 // The plugin data that Notepad++ needs
@@ -49,6 +60,7 @@ NppData nppData;
 void pluginInit(HANDLE hModule)
 {
     g_hInst = reinterpret_cast<HINSTANCE>(hModule);
+    InitializeCommitTree(g_repoPath);
 }
 
 //
@@ -210,33 +222,112 @@ INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     return FALSE;
 }
 
+INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    static TimelineData* pData = nullptr;
+    switch (message)
+    {
+    case WM_INITDIALOG:
+    {
+        pData = reinterpret_cast<TimelineData*>(lParam);
+        HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
+        // Set extended style for full row selection.
+        ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
+
+        // Insert columns: column 0: "Time", column 1: "Filename"
+        LVCOLUMN lvCol = { 0 };
+        lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+        lvCol.pszText = const_cast<LPWSTR>(L"Time");
+        lvCol.cx = 50;
+        ListView_InsertColumn(hList, 0, &lvCol);
+
+        lvCol.pszText = const_cast<LPWSTR>(L"Filename");
+        lvCol.cx = 150;
+        ListView_InsertColumn(hList, 1, &lvCol);
+
+        // Populate the list view with commit data
+        LVITEM lvItem = { 0 };
+        for (size_t i = 0; i < pData->commits.size(); i++)
+        {
+            lvItem.mask = LVIF_TEXT;
+            lvItem.iItem = (int)i;
+            // Column 0: commit number
+            std::wstring commitStr = std::to_wstring(pData->commits[i].first);
+            lvItem.pszText = const_cast<LPWSTR>(commitStr.c_str());
+            ListView_InsertItem(hList, &lvItem);
+            // Column 1: filename
+            ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].second.c_str()));
+        }
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK)
+        {
+            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
+            int sel = ListView_GetNextItem(hList, -1, LVNI_SELECTED);
+            if (sel != -1)
+            {
+                // Get the commit filename from the data vector.
+                auto commitPair = pData->commits[sel];
+                std::wstring commitFileName = commitPair.second;
+                std::wstring fullPath = pData->folderPath + L"\\" + commitFileName;
+
+                // Read the file and load it into Notepad++
+                std::string fileContents = ReadFileAsString(fullPath);
+                int which = -1;
+                ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
+                if (which != -1)
+                {
+                    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+                    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
+                }
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        }
+        else if (LOWORD(wParam) == IDCANCEL)
+        {
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+
 void openVersionedFile()
 {
-    // Use the user-defined repo location stored in g_repoPath
-    std::wstring folderPath = g_repoPath;
-
-    // Get the list of .txt files
-    std::vector<std::wstring> files = GetTextFiles(folderPath);
-
-    if (files.empty())
+    // If no commits exist, notify the user.
+    if (!g_commitTree)
     {
-        ::MessageBox(NULL, TEXT("No text files found in the folder."), TEXT("Info"), MB_OK);
+        ::MessageBox(NULL, TEXT("No commits available."), TEXT("Info"), MB_OK);
         return;
     }
 
-    // Prepare parameters for the dialog
-    std::pair<std::vector<std::wstring>*, std::wstring> dlgParams(&files, folderPath);
+    // Build a vector of commit pairs (commit number and filename) by in-order traversal.
+    std::vector<std::pair<int, std::wstring>> commitList;
+    InOrderTraversal(g_commitTree, commitList);
+    if (commitList.empty())
+    {
+        ::MessageBox(NULL, TEXT("No commits available."), TEXT("Info"), MB_OK);
+        return;
+    }
 
-    // Display the dialog using the plugin's instance handle (g_hInst) for resources
+    // Prepare timeline data to pass to the dialog.
+    TimelineData timelineData;
+    timelineData.commits = commitList;
+    timelineData.folderPath = g_repoPath;
+
+    // Display the dialog using the plugin's instance handle (g_hInst) for resources.
+    // Note: The dialog resource must now be updated to include a SysListView32 control.
     DialogBoxParam(
         g_hInst,
         MAKEINTRESOURCE(IDD_FILE_LIST_DLG),
         nppData._nppHandle,
-        FileListDlgProc,
-        (LPARAM)&dlgParams);
+        TimelineDlgProc,
+        (LPARAM)&timelineData);
 }
-
-
 
 std::wstring BrowseForFolder(HWND owner, const wchar_t* title)
 {
@@ -318,4 +409,41 @@ void commitCurrentFile() {
     // Notify the user of success.
     std::wstring msg = L"File committed as " + commitFileName;
     ::MessageBox(NULL, msg.c_str(), L"Commit Successful", MB_OK);
+}
+
+void InitializeCommitTree(const std::wstring& repoFolder)
+{
+    // Get all files from the repo folder.
+    std::vector<std::wstring> files = GetTextFiles(repoFolder);
+    int maxCommit = 0;
+
+    // Iterate through each file.
+    for (const auto& file : files)
+    {
+        // Check if file name matches the pattern "commit_<number>.txt"
+        std::wstring prefix = L"commit_";
+        std::wstring suffix = L".txt";
+        if (file.compare(0, prefix.size(), prefix) == 0 &&
+            file.size() > prefix.size() + suffix.size() &&
+            file.compare(file.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            // Extract the number between the prefix and suffix.
+            std::wstring numStr = file.substr(prefix.size(), file.size() - prefix.size() - suffix.size());
+            try
+            {
+                int commitNum = _wtoi(numStr.c_str());
+                // Insert into the persistent AVL tree.
+                g_commitTree = insertNode(g_commitTree, commitNum, file);
+                if (commitNum > maxCommit)
+                    maxCommit = commitNum;
+            }
+            catch (const std::invalid_argument&)
+            {
+                // If conversion fails, skip this file.
+                continue;
+            }
+        }
+    }
+    // Set the global commit counter to one more than the highest commit number.
+    g_commitCounter = maxCommit + 1;
 }

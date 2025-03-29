@@ -117,3 +117,12 @@ std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, 
     return newRoot;
 }
 
+// Assumes CommitNode is defined in CommitTree.h
+void InOrderTraversal(const std::shared_ptr<CommitNode>& node,
+    std::vector<std::pair<int, std::wstring>>& commits)
+{
+    if (!node) return;
+    InOrderTraversal(node->left, commits);
+    commits.push_back({ node->commitCounter, node->fileName });
+    InOrderTraversal(node->right, commits);
+}
