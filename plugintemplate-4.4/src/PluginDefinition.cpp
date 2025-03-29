@@ -24,11 +24,14 @@
 #include <cstdio>
 #include <sstream>
 #include <shlobj.h>
+#include "CommitTree.h"
 
 // GLOBALS
 
 HINSTANCE g_hInst = NULL;
 std::wstring g_repoPath = L"F:\\CSI5610\\Repo";
+std::shared_ptr<CommitNode> g_commitTree = nullptr;
+int g_commitCounter = 1;
 
 //
 // The plugin data that Notepad++ needs
@@ -73,7 +76,7 @@ void commandMenuInit()
     //            );
     setCommand(0, TEXT("Open Versioned File"), openVersionedFile, NULL, false);
     setCommand(1, TEXT("Set Repo Location"), setRepoLocation, NULL, false);
-
+    setCommand(2, TEXT("Commit Current File"), commitCurrentFile, NULL, false);
 }
 
 //
@@ -271,4 +274,48 @@ void setRepoLocation()
     {
         ::MessageBox(NULL, L"No folder was selected.", L"Repository Location", MB_OK);
     }
+}
+
+void commitCurrentFile() {
+    // Get the current Scintilla editor handle
+    int which = -1;
+    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
+    if (which == -1)
+    {
+        ::MessageBox(NULL, TEXT("No active document found."), TEXT("Commit Error"), MB_OK);
+        return;
+    }
+    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+
+    // Retrieve the current document text.
+    // First, get the text length:
+    int textLength = (int)::SendMessage(curScintilla, SCI_GETLENGTH, 0, 0);
+    // Allocate a buffer (SCI_GETTEXT works with char*; Notepad++ uses ANSI encoding here).
+    char* textBuffer = new char[textLength + 1];
+    ::SendMessage(curScintilla, SCI_GETTEXT, textLength + 1, (LPARAM)textBuffer);
+
+    // Construct a custom commit file name using the commit counter.
+    std::wstring commitFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".txt";
+    std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
+
+    // Write the file contents to the new commit file.
+    FILE* fp = _wfopen(fullPath.c_str(), L"wb");
+    if (!fp)
+    {
+        ::MessageBox(NULL, TEXT("Error writing commit file."), TEXT("Commit Error"), MB_OK);
+        delete[] textBuffer;
+        return;
+    }
+    // Write the text content. Note: writing textBuffer as binary.
+    fwrite(textBuffer, sizeof(char), textLength, fp);
+    fclose(fp);
+    delete[] textBuffer;
+
+    // Insert the new commit into the persistent AVL tree.
+    g_commitTree = insertNode(g_commitTree, g_commitCounter, commitFileName);
+    g_commitCounter++;
+
+    // Notify the user of success.
+    std::wstring msg = L"File committed as " + commitFileName;
+    ::MessageBox(NULL, msg.c_str(), L"Commit Successful", MB_OK);
 }
