@@ -5,33 +5,46 @@
 #undef max
 #include <algorithm>
 
+
+struct CommitInfo {
+    int commitNumber;
+    std::wstring fileName;
+    std::wstring diffData;
+};
+
+
 // A commit node in the persistent tree.
 struct CommitNode {
-    int commitCounter;            // The commit order
-    std::wstring fileName;        // File name for the commit
-    int height;                   // Height for balancing (AVL)
+    int commitCounter;              // The commit order
+    std::wstring fileName;          // File name for the commit
+    std::wstring diffData;          // New: text summary of changes vs. the previous version
+    int height;                     // Height for balancing (AVL)
     std::shared_ptr<CommitNode> left;
     std::shared_ptr<CommitNode> right;
 
-    CommitNode(int counter, const std::wstring& fname)
-        : commitCounter(counter), fileName(fname), height(1), left(nullptr), right(nullptr) {
+    // Update the constructor to include an optional diff parameter.
+    CommitNode(int counter, const std::wstring& fname, const std::wstring& diff = L"")
+        : commitCounter(counter), fileName(fname), diffData(diff), height(1), left(nullptr), right(nullptr) {
     }
 };
+
 
 // Return the height of a node (or 0 if null).
 int height(const std::shared_ptr<CommitNode>& node) {
     return node ? node->height : 0;
 }
 
+
 // Create a copy of the node (shallow copy for children) and update its height.
 std::shared_ptr<CommitNode> copyNode(const std::shared_ptr<CommitNode>& node) {
     if (!node) return nullptr;
-    auto newNode = std::make_shared<CommitNode>(node->commitCounter, node->fileName);
+    auto newNode = std::make_shared<CommitNode>(node->commitCounter, node->fileName, node->diffData);
     newNode->left = node->left;
     newNode->right = node->right;
     newNode->height = node->height;
     return newNode;
 }
+
 
 // Update the height based on the children.
 std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node) {
@@ -40,10 +53,12 @@ std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node
     return node;
 }
 
+
 // Get the balance factor of a node.
 int getBalance(const std::shared_ptr<CommitNode>& node) {
     return node ? height(node->left) - height(node->right) : 0;
 }
+
 
 std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y) {
     // Copy nodes for path copying.
@@ -61,6 +76,7 @@ std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y) {
     return x;
 }
 
+
 std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x) {
     auto y = copyNode(x->right);
     auto T2 = y->left;
@@ -74,20 +90,16 @@ std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x) {
     return y;
 }
 
-std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, int commitCounter, const std::wstring& fileName) {
+
+std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, int commitCounter, const std::wstring& fileName, const std::wstring& diffData) {
     if (!root)
-        return std::make_shared<CommitNode>(commitCounter, fileName);
+        return std::make_shared<CommitNode>(commitCounter, fileName, diffData);
 
-    // Copy the current node.
     auto newRoot = copyNode(root);
-
-    // Decide whether to go left or right.
-    if (commitCounter < newRoot->commitCounter) {
-        newRoot->left = insertNode(newRoot->left, commitCounter, fileName);
-    }
-    else {
-        newRoot->right = insertNode(newRoot->right, commitCounter, fileName);
-    }
+    if (commitCounter < newRoot->commitCounter)
+        newRoot->left = insertNode(newRoot->left, commitCounter, fileName, diffData);
+    else
+        newRoot->right = insertNode(newRoot->right, commitCounter, fileName, diffData);
 
     updateHeight(newRoot);
 
@@ -117,12 +129,13 @@ std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, 
     return newRoot;
 }
 
-// Assumes CommitNode is defined in CommitTree.h
+
 void InOrderTraversal(const std::shared_ptr<CommitNode>& node,
-    std::vector<std::pair<int, std::wstring>>& commits)
+    std::vector<CommitInfo>& commits)
 {
     if (!node) return;
     InOrderTraversal(node->left, commits);
-    commits.push_back({ node->commitCounter, node->fileName });
+    // Push a CommitInfo structure that includes the diff field
+    commits.push_back({ node->commitCounter, node->fileName, node->diffData });
     InOrderTraversal(node->right, commits);
 }

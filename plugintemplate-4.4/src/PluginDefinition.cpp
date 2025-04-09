@@ -20,6 +20,7 @@
 #include "DockingFeature/resource.h"
 #include <windows.h>
 #include <vector>
+#include <sstream>
 #include <string>
 #include <cstdio>
 #include <sstream>
@@ -28,6 +29,7 @@
 #include <commctrl.h>
 #include <stdexcept>
 
+
 // GLOBALS
 
 HINSTANCE g_hInst = NULL;
@@ -35,15 +37,19 @@ std::wstring g_repoPath = L"F:\\CSI5610\\Repo";
 std::shared_ptr<CommitNode> g_commitTree = nullptr;
 int g_commitCounter = 1;
 
+
 struct TimelineData {
-    std::vector<std::pair<int, std::wstring>> commits; // commit number and file name
-    std::wstring folderPath; // repo folder
+    std::vector<CommitInfo> commits;
+    std::wstring folderPath;
 };
+
 
 // Function Declerations
 void InitializeCommitTree(const std::wstring& repoFolder);
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 void viewCommitInReadOnlyDialog(const std::wstring& fullPath);
+std::wstring computeDiffSummary(const std::string& oldText, const std::string& newText);
+
 
 
 //
@@ -169,56 +175,58 @@ INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
     switch (message)
     {
-    case WM_INITDIALOG:
-    {
-        // lParam contains pointer to a structure with file list and folder path
-        auto* params = reinterpret_cast<std::pair<std::vector<std::wstring>*, std::wstring>*>(lParam);
-        pFiles = params->first;
-        folderPath = params->second;
-
-        HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST); // IDC_FILE_LIST: your list box control ID
-
-        // Populate list box
-        for (const auto& file : *pFiles)
+        case WM_INITDIALOG:
         {
-            SendMessage(hList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
-        }
-        return TRUE;
-    }
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK)
-        {
-            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
-            int sel = (int)SendMessage(hList, LB_GETCURSEL, 0, 0);
-            if (sel != LB_ERR)
+            // lParam contains pointer to a structure with file list and folder path
+            auto* params = reinterpret_cast<std::pair<std::vector<std::wstring>*, std::wstring>*>(lParam);
+            pFiles = params->first;
+            folderPath = params->second;
+
+            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST); // IDC_FILE_LIST: your list box control ID
+
+            // Populate list box
+            for (const auto& file : *pFiles)
             {
-                wchar_t fileName[260];
-                SendMessage(hList, LB_GETTEXT, sel, (LPARAM)fileName);
-
-                // Build the full file path:
-                std::wstring fullPath = folderPath + L"\\" + fileName;
-
-                // Read the contents of the selected file:
-                std::string fileContents = ReadFileAsString(fullPath);
-
-                // Get the current Scintilla editor:
-                int which = -1;
-                ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
-                if (which != -1)
-                {
-                    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
-
-                    // Overwrite the current document with the file contents:
-                    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
-                }
+                SendMessage(hList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
             }
-            EndDialog(hDlg, IDOK);
+            return TRUE;
         }
-        else if (LOWORD(wParam) == IDCANCEL)
+        case WM_COMMAND:
         {
-            EndDialog(hDlg, IDCANCEL);
+            if (LOWORD(wParam) == IDOK)
+            {
+                HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
+                int sel = (int)SendMessage(hList, LB_GETCURSEL, 0, 0);
+                if (sel != LB_ERR)
+                {
+                    wchar_t fileName[260];
+                    SendMessage(hList, LB_GETTEXT, sel, (LPARAM)fileName);
+
+                    // Build the full file path:
+                    std::wstring fullPath = folderPath + L"\\" + fileName;
+
+                    // Read the contents of the selected file:
+                    std::string fileContents = ReadFileAsString(fullPath);
+
+                    // Get the current Scintilla editor:
+                    int which = -1;
+                    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
+                    if (which != -1)
+                    {
+                        HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+
+                        // Overwrite the current document with the file contents:
+                        ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
+                    }
+                }
+                EndDialog(hDlg, IDOK);
+            }
+            else if (LOWORD(wParam) == IDCANCEL)
+            {
+                EndDialog(hDlg, IDCANCEL);
+            }
+            return TRUE;
         }
-        return TRUE;
     }
 
     return FALSE;
@@ -232,37 +240,47 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     {
     case WM_INITDIALOG:
     {
-        pData = reinterpret_cast<TimelineData*>(lParam);
-        HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
-        // Set extended style for full row selection.
-        ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
+    pData = reinterpret_cast<TimelineData*>(lParam);
+    HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
+    // Enable full row selection.
+    ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
 
-        // Insert columns: column 0: "Time", column 1: "Filename"
-        LVCOLUMN lvCol = { 0 };
-        lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-        lvCol.pszText = const_cast<LPWSTR>(L"Time");
-        lvCol.cx = 50;
-        ListView_InsertColumn(hList, 0, &lvCol);
+    // Column 0: Commit Number (or Time, if you prefer)
+    LVCOLUMN lvCol = { 0 };
+    lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+    lvCol.pszText = const_cast<LPWSTR>(L"Commit");
+    lvCol.cx = 50;
+    ListView_InsertColumn(hList, 0, &lvCol);
 
-        lvCol.pszText = const_cast<LPWSTR>(L"Filename");
-        lvCol.cx = 150;
-        ListView_InsertColumn(hList, 1, &lvCol);
+    // Column 1: Filename
+    lvCol.pszText = const_cast<LPWSTR>(L"Filename");
+    lvCol.cx = 150;
+    ListView_InsertColumn(hList, 1, &lvCol);
 
-        // Populate the list view with commit data
-        LVITEM lvItem = { 0 };
-        for (size_t i = 0; i < pData->commits.size(); i++)
-        {
-            lvItem.mask = LVIF_TEXT;
-            lvItem.iItem = (int)i;
-            // Column 0: commit number
-            std::wstring commitStr = std::to_wstring(pData->commits[i].first);
-            lvItem.pszText = const_cast<LPWSTR>(commitStr.c_str());
-            ListView_InsertItem(hList, &lvItem);
-            // Column 1: filename
-            ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].second.c_str()));
-        }
-        return TRUE;
+    // New: Column 2: Diff summary
+    lvCol.pszText = const_cast<LPWSTR>(L"Diff");
+    lvCol.cx = 200;
+    ListView_InsertColumn(hList, 2, &lvCol);
+
+    // Populate the list view.
+    LVITEM lvItem = { 0 };
+    for (size_t i = 0; i < pData->commits.size(); i++) {
+        lvItem.mask = LVIF_TEXT;
+        lvItem.iItem = (int)i;
+        // Column 0: commit number
+        std::wstring commitStr = std::to_wstring(pData->commits[i].commitNumber);
+        lvItem.pszText = const_cast<LPWSTR>(commitStr.c_str());
+        ListView_InsertItem(hList, &lvItem);
+
+        // Column 1: filename
+        ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].fileName.c_str()));
+
+        // Column 2: diff summary.
+        ListView_SetItemText(hList, (int)i, 2, const_cast<LPWSTR>(pData->commits[i].diffData.c_str()));
     }
+    return TRUE;
+    }
+
     case WM_COMMAND:
         if (LOWORD(wParam) == IDOK)
         {
@@ -272,11 +290,11 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             {
                 // Get the commit filename and number from the list.
                 auto commitPair = pData->commits[sel];
-                std::wstring commitFileName = commitPair.second;
+                std::wstring commitFileName = commitPair.fileName;
                 std::wstring fullPath = pData->folderPath + L"\\" + commitFileName;
 
                 // Check if the selected commit is the newest.
-                if (commitPair.first == g_commitCounter - 1)
+                if (commitPair.commitNumber == g_commitCounter - 1)
                 {
                     // Load the newest commit normally into Notepad++.
                     std::string fileContents = ReadFileAsString(fullPath);
@@ -297,6 +315,12 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             EndDialog(hDlg, IDOK);
             return TRUE;
         }
+        else if (LOWORD(wParam) == IDCANCEL)
+        {
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
     }
     return FALSE;
 }
@@ -306,7 +330,6 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 // New dialog procedure for view-only mode.
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // lParam is expected to be a pointer to a heap-allocated std::string containing the file content.
     static std::string* pFileContent = nullptr;
 
     switch (message)
@@ -317,7 +340,6 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
         if (pFileContent)
         {
             HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
-            // If your plugin is built with Unicode, you need to convert the ANSI string to wide string.
             int size_needed = MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, NULL, 0);
             std::wstring wcontent(size_needed, 0);
             MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, &wcontent[0], size_needed);
@@ -346,7 +368,7 @@ void viewCommitInReadOnlyDialog(const std::wstring& fullPath)
 {
     // Read the commit file content as before.
     std::string fileContents = ReadFileAsString(fullPath);
-    // Allocate the file content on the heap to pass it safely to our dialog procedure.
+    // Allocate the file content on the heap to pass it safely to the dialog procedure.
     std::string* pFileContent = new std::string(fileContents);
     DialogBoxParam(
         g_hInst,
@@ -369,7 +391,7 @@ void openVersionedFile()
     }
 
     // Build a vector of commit pairs (commit number and filename) by in-order traversal.
-    std::vector<std::pair<int, std::wstring>> commitList;
+    std::vector<CommitInfo> commitList;
     InOrderTraversal(g_commitTree, commitList);
     if (commitList.empty())
     {
@@ -447,36 +469,88 @@ void commitCurrentFile() {
     // Allocate a buffer (SCI_GETTEXT works with char*; Notepad++ uses ANSI encoding here).
     char* textBuffer = new char[textLength + 1];
     ::SendMessage(curScintilla, SCI_GETTEXT, textLength + 1, (LPARAM)textBuffer);
+    std::string currentFileText(textBuffer, textLength);
+    delete[] textBuffer;
 
-    // Construct a custom commit file name using the commit counter.
+    // Determine the file names for the new and previous commit.
     std::wstring commitFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".txt";
     std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
 
-    // Write the file contents to the new commit file.
+    // Compute diffSummary as before
+    std::wstring diffSummary = L"";
+    if (g_commitCounter > 1) {
+        std::wstring prevCommitFileName = L"commit_" + std::to_wstring(g_commitCounter - 1) + L".txt";
+        std::wstring prevFullPath = g_repoPath + L"\\" + prevCommitFileName;
+        std::string prevFileText = ReadFileAsString(prevFullPath);
+        diffSummary = computeDiffSummary(prevFileText, currentFileText);
+    }
+
+    // Write the commit file as before…
     FILE* fp = _wfopen(fullPath.c_str(), L"wb");
-    if (!fp)
-    {
+    if (!fp) {
         ::MessageBox(NULL, TEXT("Error writing commit file."), TEXT("Commit Error"), MB_OK);
-        delete[] textBuffer;
         return;
     }
-    // Write the text content. Note: writing textBuffer as binary.
-    fwrite(textBuffer, sizeof(char), textLength, fp);
+    fwrite(currentFileText.c_str(), sizeof(char), currentFileText.size(), fp);
     fclose(fp);
-    delete[] textBuffer;
 
-    // Insert the new commit into the persistent AVL tree.
-    g_commitTree = insertNode(g_commitTree, g_commitCounter, commitFileName);
+    // --- New Diff File Writing Section ---
+
+    // Create the diff file name (e.g., commit_3.diff) and full path.
+    std::wstring diffFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".diff";
+    std::wstring diffFullPath = g_repoPath + L"\\" + diffFileName;
+
+    // Convert diffSummary (std::wstring) to a UTF-8 std::string.
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, diffSummary.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string diffSummaryStr(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, diffSummary.c_str(), -1, &diffSummaryStr[0], size_needed, nullptr, nullptr);
+
+    // Write the diff to the diff file.
+    FILE* diff_fp = _wfopen(diffFullPath.c_str(), L"wb");
+    if (diff_fp) {
+        fwrite(diffSummaryStr.c_str(), sizeof(char), diffSummaryStr.size(), diff_fp);
+        fclose(diff_fp);
+    }
+    else {
+        ::MessageBox(NULL, TEXT("Error writing diff file."), TEXT("Commit Error"), MB_OK);
+    }
+
+    // Insert the new commit into the persistent AVL tree with the diff summary.
+    g_commitTree = insertNode(g_commitTree, g_commitCounter, commitFileName, diffSummary);
     g_commitCounter++;
 
-    // Notify the user of success.
     std::wstring msg = L"File committed as " + commitFileName;
     ::MessageBox(NULL, msg.c_str(), L"Commit Successful", MB_OK);
+
 }
+
+
+std::wstring computeDiffSummary(const std::string& oldText, const std::string& newText) {
+    std::istringstream oldStream(oldText);
+    std::istringstream newStream(newText);
+    std::string oldLine, newLine;
+    int added = 0, removed = 0;
+
+    // Note: This is a naïve line-by-line comparison.
+    while (std::getline(oldStream, oldLine) && std::getline(newStream, newLine)) {
+        if (oldLine != newLine) {
+            added++;
+            removed++;
+        }
+    }
+    // Count any remaining lines.
+    while (std::getline(oldStream, oldLine)) removed++;
+    while (std::getline(newStream, newLine)) added++;
+
+    std::wstringstream wss;
+    wss << L"Added: " << added << L", Removed: " << removed;
+    return wss.str();
+}
+
 
 void InitializeCommitTree(const std::wstring& repoFolder)
 {
-    // Get all files from the repo folder.
+    // Get all text files from the repo folder.
     std::vector<std::wstring> files = GetTextFiles(repoFolder);
     int maxCommit = 0;
 
@@ -490,21 +564,23 @@ void InitializeCommitTree(const std::wstring& repoFolder)
             file.size() > prefix.size() + suffix.size() &&
             file.compare(file.size() - suffix.size(), suffix.size(), suffix) == 0)
         {
-            // Extract the number between the prefix and suffix.
+            // Extract the commit number from the file name.
             std::wstring numStr = file.substr(prefix.size(), file.size() - prefix.size() - suffix.size());
-            try
-            {
-                int commitNum = _wtoi(numStr.c_str());
-                // Insert into the persistent AVL tree.
-                g_commitTree = insertNode(g_commitTree, commitNum, file);
-                if (commitNum > maxCommit)
-                    maxCommit = commitNum;
-            }
-            catch (const std::invalid_argument&)
-            {
-                // If conversion fails, skip this file.
-                continue;
-            }
+            int commitNum = _wtoi(numStr.c_str());
+
+            // Attempt to read the diff file: commit_<number>.diff
+            std::wstring diffFileName = L"commit_" + std::to_wstring(commitNum) + L".diff";
+            std::wstring diffFullPath = repoFolder + L"\\" + diffFileName;
+            std::string diffDataStr = ReadFileAsString(diffFullPath);
+            // Convert the diff from std::string (if in ASCII/UTF-8) to std::wstring.
+            // Here we do a simple conversion assuming the characters are in the basic ASCII range.
+            std::wstring diffData(diffDataStr.begin(), diffDataStr.end());
+
+            // Insert into the persistent AVL tree using the diff information.
+            g_commitTree = insertNode(g_commitTree, commitNum, file, diffData);
+
+            if (commitNum > maxCommit)
+                maxCommit = commitNum;
         }
     }
     // Set the global commit counter to one more than the highest commit number.
