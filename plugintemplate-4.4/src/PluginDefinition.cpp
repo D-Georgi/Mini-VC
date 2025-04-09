@@ -42,6 +42,8 @@ struct TimelineData {
 
 // Function Declerations
 void InitializeCommitTree(const std::wstring& repoFolder);
+INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+void viewCommitInReadOnlyDialog(const std::wstring& fullPath);
 
 
 //
@@ -222,6 +224,7 @@ INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     return FALSE;
 }
 
+
 INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static TimelineData* pData = nullptr;
@@ -267,33 +270,93 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             int sel = ListView_GetNextItem(hList, -1, LVNI_SELECTED);
             if (sel != -1)
             {
-                // Get the commit filename from the data vector.
+                // Get the commit filename and number from the list.
                 auto commitPair = pData->commits[sel];
                 std::wstring commitFileName = commitPair.second;
                 std::wstring fullPath = pData->folderPath + L"\\" + commitFileName;
 
-                // Read the file and load it into Notepad++
-                std::string fileContents = ReadFileAsString(fullPath);
-                int which = -1;
-                ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
-                if (which != -1)
+                // Check if the selected commit is the newest.
+                if (commitPair.first == g_commitCounter - 1)
                 {
-                    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
-                    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
+                    // Load the newest commit normally into Notepad++.
+                    std::string fileContents = ReadFileAsString(fullPath);
+                    int which = -1;
+                    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
+                    if (which != -1)
+                    {
+                        HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+                        ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
+                    }
+                }
+                else
+                {
+                    // For an older commit, open it in a view-only dialog.
+                    viewCommitInReadOnlyDialog(fullPath);
                 }
             }
             EndDialog(hDlg, IDOK);
             return TRUE;
         }
-        else if (LOWORD(wParam) == IDCANCEL)
+    }
+    return FALSE;
+}
+
+
+
+// New dialog procedure for view-only mode.
+INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    // lParam is expected to be a pointer to a heap-allocated std::string containing the file content.
+    static std::string* pFileContent = nullptr;
+
+    switch (message)
+    {
+    case WM_INITDIALOG:
+    {
+        pFileContent = reinterpret_cast<std::string*>(lParam);
+        if (pFileContent)
         {
-            EndDialog(hDlg, IDCANCEL);
+            HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
+            // If your plugin is built with Unicode, you need to convert the ANSI string to wide string.
+            int size_needed = MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, NULL, 0);
+            std::wstring wcontent(size_needed, 0);
+            MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, &wcontent[0], size_needed);
+            SetWindowText(hEdit, wcontent.c_str());
+        }
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK)
+        {
+            EndDialog(hDlg, IDOK);
+            if (pFileContent)
+            {
+                delete pFileContent; // free the allocated string
+                pFileContent = nullptr;
+            }
             return TRUE;
         }
         break;
     }
     return FALSE;
 }
+
+
+void viewCommitInReadOnlyDialog(const std::wstring& fullPath)
+{
+    // Read the commit file content as before.
+    std::string fileContents = ReadFileAsString(fullPath);
+    // Allocate the file content on the heap to pass it safely to our dialog procedure.
+    std::string* pFileContent = new std::string(fileContents);
+    DialogBoxParam(
+        g_hInst,
+        MAKEINTRESOURCE(IDD_VIEW_ONLY_DLG),
+        nppData._nppHandle,
+        ViewOnlyDlgProc,
+        reinterpret_cast<LPARAM>(pFileContent)
+    );
+}
+
 
 
 void openVersionedFile()

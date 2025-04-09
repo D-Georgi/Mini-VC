@@ -31,5 +31,10 @@
 #define IDD_FILE_LIST_DLG 101
 #define IDC_FILE_LIST     1001
 
+
+#define IDD_VIEW_ONLY_DLG 102
+#define IDC_VIEW_EDIT     1002
+
+
 #endif // RESOURCE_H
 

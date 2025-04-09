@@ -1,9 +1,10 @@
-﻿  PluginDefinition.cpp
+﻿  GoToLineDlg.cpp
+  PluginDefinition.cpp
      Creating library NppPluginTemplate.lib and object NppPluginTemplate.exp
   Generating code
-  117 of 605 functions (19.3%) were compiled, the rest were copied from previous compilation.
+  13 of 613 functions ( 2.1%) were compiled, the rest were copied from previous compilation.
     8 functions were new in current compilation
-    35 functions had inline decision re-evaluated but remain unchanged
+    46 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
   NppPluginTemplate.vcxproj -> F:\CSI5610\Term_Project\Mini-VC\plugintemplate-4.4\bin64\NppPluginTemplate.dll
           1 file(s) copied.
