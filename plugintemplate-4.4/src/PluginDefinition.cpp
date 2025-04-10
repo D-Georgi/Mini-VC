@@ -30,6 +30,12 @@
 #include <stdexcept>
 
 
+/*
+* TODO: 
+* -Set up commit messages and make windows bigger
+* -Fix all 'X' buttons and scrolling between old commits
+*/
+
 // GLOBALS
 
 HINSTANCE g_hInst = NULL;
