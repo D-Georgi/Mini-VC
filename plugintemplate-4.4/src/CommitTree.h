@@ -13,11 +13,11 @@ struct CommitInfo {
 };
 
 
-// A commit node in the persistent tree.
+// A commit node in the partially persistent tree.
 struct CommitNode {
     int commitCounter;              // The commit order
     std::wstring fileName;          // File name for the commit
-    std::wstring diffData;          // New: text summary of changes vs. the previous version
+    std::wstring diffData;          // text summary of changes vs. the previous version
     int height;                     // Height for balancing (AVL)
     std::shared_ptr<CommitNode> left;
     std::shared_ptr<CommitNode> right;
@@ -35,7 +35,7 @@ int height(const std::shared_ptr<CommitNode>& node) {
 }
 
 
-// Create a copy of the node (shallow copy for children) and update its height.
+// Create a copy of the node and update its height.
 std::shared_ptr<CommitNode> copyNode(const std::shared_ptr<CommitNode>& node) {
     if (!node) return nullptr;
     auto newNode = std::make_shared<CommitNode>(node->commitCounter, node->fileName, node->diffData);
@@ -63,14 +63,14 @@ int getBalance(const std::shared_ptr<CommitNode>& node) {
 std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y) {
     // Copy nodes for path copying.
     auto x = copyNode(y->left);
-    auto T2 = x->right; // No need to copy T2, it is shared.
+    auto T2 = x->right;
 
     // Rotate: create new version of y with updated left pointer.
     auto newY = copyNode(y);
     newY->left = T2;
     updateHeight(newY);
 
-    // Now, create new version of x and attach newY.
+    // create new version of x and attach newY.
     x->right = newY;
     updateHeight(x);
     return x;
@@ -135,7 +135,6 @@ void InOrderTraversal(const std::shared_ptr<CommitNode>& node,
 {
     if (!node) return;
     InOrderTraversal(node->left, commits);
-    // Push a CommitInfo structure that includes the diff field
     commits.push_back({ node->commitCounter, node->fileName, node->diffData });
     InOrderTraversal(node->right, commits);
 }

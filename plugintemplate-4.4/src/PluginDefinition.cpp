@@ -182,7 +182,7 @@ INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             pFiles = params->first;
             folderPath = params->second;
 
-            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST); // IDC_FILE_LIST: your list box control ID
+            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST); // IDC_FILE_LIST: list box control ID
 
             // Populate list box
             for (const auto& file : *pFiles)
@@ -327,7 +327,7 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
 
 
-// New dialog procedure for view-only mode.
+// dialog procedure for view-only mode.
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static std::string* pFileContent = nullptr;
@@ -405,7 +405,6 @@ void openVersionedFile()
     timelineData.folderPath = g_repoPath;
 
     // Display the dialog using the plugin's instance handle (g_hInst) for resources.
-    // Note: The dialog resource must now be updated to include a SysListView32 control.
     DialogBoxParam(
         g_hInst,
         MAKEINTRESOURCE(IDD_FILE_LIST_DLG),
@@ -442,7 +441,7 @@ void setRepoLocation()
     {
         g_repoPath = chosenFolder;  // Save the new repo location
 
-        // Optionally, notify the user:
+        // notify the user:
         std::wstring msg = L"Repository location set to:\n" + chosenFolder;
         ::MessageBox(NULL, msg.c_str(), L"Repository Location", MB_OK);
     }
@@ -494,8 +493,6 @@ void commitCurrentFile() {
     fwrite(currentFileText.c_str(), sizeof(char), currentFileText.size(), fp);
     fclose(fp);
 
-    // --- New Diff File Writing Section ---
-
     // Create the diff file name (e.g., commit_3.diff) and full path.
     std::wstring diffFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".diff";
     std::wstring diffFullPath = g_repoPath + L"\\" + diffFileName;
@@ -531,7 +528,7 @@ std::wstring computeDiffSummary(const std::string& oldText, const std::string& n
     std::string oldLine, newLine;
     int added = 0, removed = 0;
 
-    // Note: This is a naïve line-by-line comparison.
+    // line-by-line comparison, this is temporary, needs future work
     while (std::getline(oldStream, oldLine) && std::getline(newStream, newLine)) {
         if (oldLine != newLine) {
             added++;
@@ -572,11 +569,10 @@ void InitializeCommitTree(const std::wstring& repoFolder)
             std::wstring diffFileName = L"commit_" + std::to_wstring(commitNum) + L".diff";
             std::wstring diffFullPath = repoFolder + L"\\" + diffFileName;
             std::string diffDataStr = ReadFileAsString(diffFullPath);
-            // Convert the diff from std::string (if in ASCII/UTF-8) to std::wstring.
-            // Here we do a simple conversion assuming the characters are in the basic ASCII range.
+            // Convert the diff from std::string to std::wstring.
             std::wstring diffData(diffDataStr.begin(), diffDataStr.end());
 
-            // Insert into the persistent AVL tree using the diff information.
+            // Insert into commit tree
             g_commitTree = insertNode(g_commitTree, commitNum, file, diffData);
 
             if (commitNum > maxCommit)
