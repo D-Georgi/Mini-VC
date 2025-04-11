@@ -309,31 +309,35 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             int sel = ListView_GetNextItem(hList, -1, LVNI_SELECTED);
             if (sel != -1)
             {
-                // Get the commit filename and number from the list.
+                // Get the commit details
                 auto commitPair = pData->commits[sel];
                 std::wstring commitFileName = commitPair.fileName;
                 std::wstring fullPath = pData->folderPath + L"\\" + commitFileName;
 
-                // Check if the selected commit is the newest.
+                // Check if this is the newest commit:
                 if (commitPair.commitNumber == g_commitCounter - 1)
                 {
-                    // Load the newest commit normally into Notepad++.
+                    // Load the newest commit directly into Notepad++
                     std::string fileContents = ReadFileAsString(fullPath);
                     int which = -1;
                     ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
                     if (which != -1)
                     {
-                        HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+                        HWND curScintilla = (which == 0)
+                            ? nppData._scintillaMainHandle
+                            : nppData._scintillaSecondHandle;
                         ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
                     }
+                    // For the newest commit, close the file list dialog.
+                    EndDialog(hDlg, IDOK);
                 }
                 else
                 {
-                    // For an older commit, open it in a view-only dialog.
+                    // For an older commit, open it in the view-only dialog.
                     viewCommitInReadOnlyDialog(fullPath);
+                    // Do NOT call EndDialog(hDlg, IDOK) so that the file list remains open.
                 }
             }
-            EndDialog(hDlg, IDOK);
             return TRUE;
         }
         else if (LOWORD(wParam) == IDCANCEL)
@@ -709,7 +713,7 @@ std::wstring LoadRepoPath() {
 
 
 void SaveRepoPath(const std::wstring& newPath) {
-    std::wstring configFile = GetConfigFilePath(); // use the user-writable location
+    std::wstring configFile = GetConfigFilePath();
     FILE* fp = _wfopen(configFile.c_str(), L"w");
     if (fp) {
         fputws(newPath.c_str(), fp);
