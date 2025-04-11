@@ -363,6 +363,16 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
         }
         return TRUE;
     }
+    case WM_CLOSE:
+    {
+        EndDialog(hDlg, IDCANCEL);
+        if (pFileContent)
+        {
+            delete pFileContent;
+            pFileContent = nullptr;
+        }
+        return TRUE;
+    }
     case WM_COMMAND:
         if (LOWORD(wParam) == IDOK)
         {
