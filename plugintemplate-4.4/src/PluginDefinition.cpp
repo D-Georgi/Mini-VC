@@ -269,7 +269,7 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     lvCol.cx = 200;
     ListView_InsertColumn(hList, 2, &lvCol);
 
-    // New Column 3: Commit Message
+    // Column 3: Commit Message
     lvCol.pszText = const_cast<LPWSTR>(L"Message");
     lvCol.cx = 200;
     ListView_InsertColumn(hList, 3, &lvCol);
@@ -290,7 +290,7 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
         // Column 2: diff summary
         ListView_SetItemText(hList, (int)i, 2, const_cast<LPWSTR>(pData->commits[i].diffData.c_str()));
 
-        // Column 3: commit message (new)
+        // Column 3: commit message
         ListView_SetItemText(hList, (int)i, 3, const_cast<LPWSTR>(pData->commits[i].commitMessage.c_str()));
     }
 
@@ -465,7 +465,7 @@ void setRepoLocation()
     std::wstring chosenFolder = BrowseForFolder(nppData._nppHandle, L"Select Repository Folder");
     if (!chosenFolder.empty())
     {
-        g_repoPath = chosenFolder;  // Save the new repo location
+        g_repoPath = chosenFolder;  // Save the repo location
 
         // notify the user:
         std::wstring msg = L"Repository location set to:\n" + chosenFolder;
@@ -488,10 +488,7 @@ void commitCurrentFile() {
     }
     HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
 
-    // Retrieve the current document text.
-    // First, get the text length:
     int textLength = (int)::SendMessage(curScintilla, SCI_GETLENGTH, 0, 0);
-    // Allocate a buffer (SCI_GETTEXT works with char*; Notepad++ uses ANSI encoding here).
     char* textBuffer = new char[textLength + 1];
     ::SendMessage(curScintilla, SCI_GETTEXT, textLength + 1, (LPARAM)textBuffer);
     std::string currentFileText(textBuffer, textLength);
