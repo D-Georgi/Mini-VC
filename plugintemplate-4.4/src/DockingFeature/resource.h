@@ -36,5 +36,9 @@
 #define IDC_VIEW_EDIT     1002
 
 
+#define IDD_COMMIT_MSG_DLG 103
+#define IDC_COMMIT_MSG_EDIT 1003
+
+
 #endif // RESOURCE_H
 

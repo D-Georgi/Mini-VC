@@ -32,8 +32,7 @@
 
 /*
 * TODO: 
-* -Set up commit messages and make windows bigger
-* -Fix all 'X' buttons and scrolling between old commits
+* Fix all 'X' buttons and scrolling between old commits
 */
 
 // GLOBALS
@@ -42,6 +41,7 @@ HINSTANCE g_hInst = NULL;
 std::wstring g_repoPath = L"F:\\CSI5610\\Repo";
 std::shared_ptr<CommitNode> g_commitTree = nullptr;
 int g_commitCounter = 1;
+static wchar_t g_commitMsgBuffer[512] = { 0 };
 
 
 struct TimelineData {
@@ -55,7 +55,8 @@ void InitializeCommitTree(const std::wstring& repoFolder);
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 void viewCommitInReadOnlyDialog(const std::wstring& fullPath);
 std::wstring computeDiffSummary(const std::string& oldText, const std::string& newText);
-
+std::wstring promptForCommitMessage();
+static INT_PTR CALLBACK CommitMessageDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 
 
 //
@@ -251,7 +252,7 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     // Enable full row selection.
     ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
 
-    // Column 0: Commit Number (or Time, if you prefer)
+    // Column 0: Commit Number
     LVCOLUMN lvCol = { 0 };
     lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
     lvCol.pszText = const_cast<LPWSTR>(L"Commit");
@@ -263,14 +264,19 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     lvCol.cx = 150;
     ListView_InsertColumn(hList, 1, &lvCol);
 
-    // New: Column 2: Diff summary
+    // Column 2: Diff summary
     lvCol.pszText = const_cast<LPWSTR>(L"Diff");
     lvCol.cx = 200;
     ListView_InsertColumn(hList, 2, &lvCol);
 
+    // New Column 3: Commit Message
+    lvCol.pszText = const_cast<LPWSTR>(L"Message");
+    lvCol.cx = 200;
+    ListView_InsertColumn(hList, 3, &lvCol);
+
     // Populate the list view.
-    LVITEM lvItem = { 0 };
     for (size_t i = 0; i < pData->commits.size(); i++) {
+        LVITEM lvItem = { 0 };
         lvItem.mask = LVIF_TEXT;
         lvItem.iItem = (int)i;
         // Column 0: commit number
@@ -281,9 +287,13 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
         // Column 1: filename
         ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].fileName.c_str()));
 
-        // Column 2: diff summary.
+        // Column 2: diff summary
         ListView_SetItemText(hList, (int)i, 2, const_cast<LPWSTR>(pData->commits[i].diffData.c_str()));
+
+        // Column 3: commit message (new)
+        ListView_SetItemText(hList, (int)i, 3, const_cast<LPWSTR>(pData->commits[i].commitMessage.c_str()));
     }
+
     return TRUE;
     }
 
@@ -481,7 +491,12 @@ void commitCurrentFile() {
     std::wstring commitFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".txt";
     std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
 
-    // Compute diffSummary as before
+    std::wstring commitMessage = promptForCommitMessage();
+    if (commitMessage.empty()) {
+        ::MessageBox(NULL, TEXT("Commit cancelled: no message entered."), TEXT("Commit Error"), MB_OK);
+        return;
+    }
+
     std::wstring diffSummary = L"";
     if (g_commitCounter > 1) {
         std::wstring prevCommitFileName = L"commit_" + std::to_wstring(g_commitCounter - 1) + L".txt";
@@ -490,7 +505,6 @@ void commitCurrentFile() {
         diffSummary = computeDiffSummary(prevFileText, currentFileText);
     }
 
-    // Write the commit file as before…
     FILE* fp = _wfopen(fullPath.c_str(), L"wb");
     if (!fp) {
         ::MessageBox(NULL, TEXT("Error writing commit file."), TEXT("Commit Error"), MB_OK);
@@ -518,9 +532,28 @@ void commitCurrentFile() {
         ::MessageBox(NULL, TEXT("Error writing diff file."), TEXT("Commit Error"), MB_OK);
     }
 
-    // Insert the new commit into the persistent AVL tree with the diff summary.
-    g_commitTree = insertNode(g_commitTree, g_commitCounter, commitFileName, diffSummary);
+    // Create a file name for the commit message, e.g., commit_3.msg:
+    std::wstring msgFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".msg";
+    std::wstring msgFullPath = g_repoPath + L"\\" + msgFileName;
+    FILE* msg_fp = _wfopen(msgFullPath.c_str(), L"wb");
+    if (msg_fp) {
+        // Convert the commit message (std::wstring) to UTF-8 std::string
+        int msg_size_needed = WideCharToMultiByte(CP_UTF8, 0, commitMessage.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string commitMessageStr(msg_size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, commitMessage.c_str(), -1, &commitMessageStr[0], msg_size_needed, nullptr, nullptr);
+
+        // Write the commit message (without the null terminator)
+        fwrite(commitMessageStr.c_str(), sizeof(char), commitMessageStr.size() - 1, msg_fp);
+        fclose(msg_fp);
+    }
+    else {
+        ::MessageBox(NULL, TEXT("Error writing commit message file."), TEXT("Commit Error"), MB_OK);
+    }
+
+    // Insert the new commit into the persistent AVL tree
+    g_commitTree = insertNode(g_commitTree, g_commitCounter, commitFileName, diffSummary, commitMessage);
     g_commitCounter++;
+
 
     std::wstring msg = L"File committed as " + commitFileName;
     ::MessageBox(NULL, msg.c_str(), L"Commit Successful", MB_OK);
@@ -567,19 +600,21 @@ void InitializeCommitTree(const std::wstring& repoFolder)
             file.size() > prefix.size() + suffix.size() &&
             file.compare(file.size() - suffix.size(), suffix.size(), suffix) == 0)
         {
-            // Extract the commit number from the file name.
             std::wstring numStr = file.substr(prefix.size(), file.size() - prefix.size() - suffix.size());
             int commitNum = _wtoi(numStr.c_str());
 
-            // Attempt to read the diff file: commit_<number>.diff
             std::wstring diffFileName = L"commit_" + std::to_wstring(commitNum) + L".diff";
             std::wstring diffFullPath = repoFolder + L"\\" + diffFileName;
             std::string diffDataStr = ReadFileAsString(diffFullPath);
-            // Convert the diff from std::string to std::wstring.
             std::wstring diffData(diffDataStr.begin(), diffDataStr.end());
 
+            std::wstring msgFileName = L"commit_" + std::to_wstring(commitNum) + L".msg";
+            std::wstring msgFullPath = repoFolder + L"\\" + msgFileName;
+            std::string commitMsgStr = ReadFileAsString(msgFullPath);
+            std::wstring commitMsg(commitMsgStr.begin(), commitMsgStr.end());
+
             // Insert into commit tree
-            g_commitTree = insertNode(g_commitTree, commitNum, file, diffData);
+            g_commitTree = insertNode(g_commitTree, commitNum, file, diffData, commitMsg);
 
             if (commitNum > maxCommit)
                 maxCommit = commitNum;
@@ -587,4 +622,37 @@ void InitializeCommitTree(const std::wstring& repoFolder)
     }
     // Set the global commit counter to one more than the highest commit number.
     g_commitCounter = maxCommit + 1;
+}
+
+
+std::wstring promptForCommitMessage() {
+    INT_PTR result = DialogBox(g_hInst, MAKEINTRESOURCE(IDD_COMMIT_MSG_DLG), nppData._nppHandle, CommitMessageDlgProc);
+    if (result == 1) {
+        return std::wstring(g_commitMsgBuffer);
+    }
+    return L""; // return an empty string if cancelled or error
+}
+
+
+static INT_PTR CALLBACK CommitMessageDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+    switch (message) {
+    case WM_INITDIALOG:
+        // Clear the buffer on init
+        g_commitMsgBuffer[0] = L'\0';
+        return TRUE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            // Retrieve text from the edit control.
+            GetDlgItemText(hDlg, IDC_COMMIT_MSG_EDIT, g_commitMsgBuffer, 512);
+            EndDialog(hDlg, 1);
+            return TRUE;
+        }
+        else if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, 0);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
 }
