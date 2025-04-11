@@ -22,6 +22,8 @@
 #include <vector>
 #include <sstream>
 #include <string>
+#include <cwchar>
+#include <algorithm>
 #include <cstdio>
 #include <sstream>
 #include <shlobj.h>
@@ -57,6 +59,8 @@ void viewCommitInReadOnlyDialog(const std::wstring& fullPath);
 std::wstring computeDiffSummary(const std::string& oldText, const std::string& newText);
 std::wstring promptForCommitMessage();
 static INT_PTR CALLBACK CommitMessageDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+std::wstring LoadRepoPath();
+void SaveRepoPath(const std::wstring& newPath);
 
 
 //
@@ -75,6 +79,7 @@ NppData nppData;
 void pluginInit(HANDLE hModule)
 {
     g_hInst = reinterpret_cast<HINSTANCE>(hModule);
+    g_repoPath = LoadRepoPath();
     InitializeCommitTree(g_repoPath);
 }
 
@@ -459,15 +464,15 @@ std::wstring BrowseForFolder(HWND owner, const wchar_t* title)
     return folder;
 }
 
+
 void setRepoLocation()
 {
-    // Open the folder selection dialog with the plugin's main window as owner
     std::wstring chosenFolder = BrowseForFolder(nppData._nppHandle, L"Select Repository Folder");
     if (!chosenFolder.empty())
     {
-        g_repoPath = chosenFolder;  // Save the repo location
-
-        // notify the user:
+        g_repoPath = chosenFolder;
+        SaveRepoPath(chosenFolder);
+        InitializeCommitTree(g_repoPath);
         std::wstring msg = L"Repository location set to:\n" + chosenFolder;
         ::MessageBox(NULL, msg.c_str(), L"Repository Location", MB_OK);
     }
@@ -476,6 +481,7 @@ void setRepoLocation()
         ::MessageBox(NULL, L"No folder was selected.", L"Repository Location", MB_OK);
     }
 }
+
 
 void commitCurrentFile() {
     // Get the current Scintilla editor handle
@@ -662,4 +668,51 @@ static INT_PTR CALLBACK CommitMessageDlgProc(HWND hDlg, UINT message, WPARAM wPa
         break;
     }
     return FALSE;
+}
+
+
+std::wstring GetConfigFilePath() {
+    // Retrieve the path to the Local AppData folder.
+    wchar_t appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath))) {
+        std::wstring configDir = std::wstring(appDataPath) + L"\\Mini-VC";
+        CreateDirectoryW(configDir.c_str(), NULL);
+
+        return configDir + L"\\repo_path.txt";
+    }
+    // Fallback: if SHGetFolderPath fails, use a relative path.
+    return L"repo_path.txt";
+}
+
+
+std::wstring LoadRepoPath() {
+    std::wstring configFile = GetConfigFilePath();
+    FILE* fp = _wfopen(configFile.c_str(), L"r");
+    if (!fp) {
+        // File does not exist; return a default repository path.
+        return L"F:\\CSI5610\\Repo";
+    }
+
+    wchar_t pathBuffer[MAX_PATH] = { 0 };
+    if (fgetws(pathBuffer, MAX_PATH, fp) == nullptr) {
+        fclose(fp);
+        return L"F:\\CSI5610\\Repo";
+    }
+    fclose(fp);
+
+    // Remove any newline characters
+    std::wstring repoPath(pathBuffer);
+    repoPath.erase(std::remove(repoPath.begin(), repoPath.end(), L'\n'), repoPath.end());
+    repoPath.erase(std::remove(repoPath.begin(), repoPath.end(), L'\r'), repoPath.end());
+    return repoPath;
+}
+
+
+void SaveRepoPath(const std::wstring& newPath) {
+    std::wstring configFile = GetConfigFilePath(); // use the user-writable location
+    FILE* fp = _wfopen(configFile.c_str(), L"w");
+    if (fp) {
+        fputws(newPath.c_str(), fp);
+        fclose(fp);
+    }
 }
