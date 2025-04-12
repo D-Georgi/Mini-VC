@@ -476,7 +476,7 @@ void openVersionedFile()
 
     // Build a vector of commit pairs (commit number and filename) by in-order traversal.
     std::vector<CommitInfo> commitList;
-    InOrderTraversal(g_commitTree, commitList);
+    InOrderTraversal(g_commitTree, g_commitCounter - 1, commitList);
     if (commitList.empty())
     {
         ::MessageBox(NULL, TEXT("No commits available."), TEXT("Info"), MB_OK);
