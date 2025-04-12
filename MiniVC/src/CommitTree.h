@@ -20,11 +20,9 @@ struct CommitNode;
 
 struct ModificationRecord {
     enum Field { LEFT, RIGHT, HEIGHT };
-    int version;      // The version (or commit key) when this update occurred.
-    Field field;      // Which field was updated.
-    // For pointer fields (LEFT or RIGHT)
+    int version;      // commit
+    Field field;
     std::shared_ptr<CommitNode> newChild;
-    // For the height field.
     int newHeight;
 
     ModificationRecord()
@@ -53,7 +51,7 @@ struct CommitNode {
     std::shared_ptr<CommitNode> left;
     std::shared_ptr<CommitNode> right;
 
-    // Fat node fields: a fixed-size modification log.
+    // Fat node fields
     static const int MAX_MODS = 2;
     ModificationRecord mods[MAX_MODS];
     int modCount;
@@ -161,7 +159,6 @@ std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node
 
 
 std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y, int version) {
-    // x will be the effective left child of y.
     auto x = copyFullNode(getLeft(y, version), version);
     auto T2 = getRight(x, version);
     auto newY = updateLeft(y, T2, version);
@@ -208,20 +205,19 @@ std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, 
 
     int balance = getHeight(getLeft(newRoot, version), version) - getHeight(getRight(newRoot, version), version);
 
-    // Balance the tree following AVL rotations.
-    // Left Left case.
+    // left left
     if (balance > 1 && commitCounter < getLeft(newRoot, version)->commitCounter)
         return rightRotate(newRoot, version);
-    // Right Right case.
+    // right right
     if (balance < -1 && commitCounter >= getRight(newRoot, version)->commitCounter)
         return leftRotate(newRoot, version);
-    // Left Right case.
+    // left right 
     if (balance > 1 && commitCounter >= getLeft(newRoot, version)->commitCounter) {
         auto updatedLeft = leftRotate(getLeft(newRoot, version), version);
         newRoot = updateLeft(newRoot, updatedLeft, version);
         return rightRotate(newRoot, version);
     }
-    // Right Left case.
+    // right left 
     if (balance < -1 && commitCounter < getRight(newRoot, version)->commitCounter) {
         auto updatedRight = rightRotate(getRight(newRoot, version), version);
         newRoot = updateRight(newRoot, updatedRight, version);
