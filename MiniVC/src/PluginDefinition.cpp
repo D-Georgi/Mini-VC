@@ -341,7 +341,6 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
                 {
                     // For an older commit, open it in the view-only dialog.
                     viewCommitInReadOnlyDialog(fullPath);
-                    // Do NOT call EndDialog(hDlg, IDOK) so that the file list remains open.
                 }
             }
             return TRUE;
@@ -358,7 +357,7 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
 
 
-// dialog procedure for view-only mode.
+// dialog procedure for view-only commits mode.
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_INITDIALOG) {
@@ -440,6 +439,7 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 }
 
 
+// Function that handles view commits window
 void viewCommitInReadOnlyDialog(const std::wstring& fullPath)
 {
     size_t pos1 = fullPath.find(L"commit_");
@@ -464,7 +464,7 @@ void viewCommitInReadOnlyDialog(const std::wstring& fullPath)
 }
 
 
-
+// Lists out all commits in a summary view
 void openVersionedFile()
 {
     // If no commits exist, notify the user.
@@ -488,7 +488,7 @@ void openVersionedFile()
     timelineData.commits = commitList;
     timelineData.folderPath = g_repoPath;
 
-    // Display the dialog using the plugin's instance handle (g_hInst) for resources.
+    // Display the dialog
     DialogBoxParam(
         g_hInst,
         MAKEINTRESOURCE(IDD_FILE_LIST_DLG),
@@ -497,6 +497,8 @@ void openVersionedFile()
         (LPARAM)&timelineData);
 }
 
+
+// Helper function for setting up repo
 std::wstring BrowseForFolder(HWND owner, const wchar_t* title)
 {
     std::wstring folder;
@@ -518,6 +520,7 @@ std::wstring BrowseForFolder(HWND owner, const wchar_t* title)
 }
 
 
+// Setting the repo location
 void setRepoLocation()
 {
     std::wstring chosenFolder = BrowseForFolder(nppData._nppHandle, L"Select Repository Folder");
@@ -536,6 +539,7 @@ void setRepoLocation()
 }
 
 
+// Commiting a file
 void commitCurrentFile() {
     // Get the current Scintilla editor handle
     int which = -1;
@@ -553,16 +557,18 @@ void commitCurrentFile() {
     std::string currentFileText(textBuffer, textLength);
     delete[] textBuffer;
 
-    // Determine the file names for the new and previous commit.
+    // calculate the file names for the new and previous commit.
     std::wstring commitFileName = L"commit_" + std::to_wstring(g_commitCounter) + L".txt";
     std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
 
+    // handle commit message
     std::wstring commitMessage = promptForCommitMessage();
     if (commitMessage.empty()) {
         ::MessageBox(NULL, TEXT("Commit cancelled: no message entered."), TEXT("Commit Error"), MB_OK);
         return;
     }
 
+    // Very basic diff generation (Will eventually replace this with an actual diffing library)
     std::wstring diffSummary = L"";
     if (g_commitCounter > 1) {
         std::wstring prevCommitFileName = L"commit_" + std::to_wstring(g_commitCounter - 1) + L".txt";
@@ -627,6 +633,7 @@ void commitCurrentFile() {
 }
 
 
+// Basic function for generating a diff summary, will eventually replace this with actual diffing
 std::wstring computeDiffSummary(const std::string& oldText, const std::string& newText) {
     std::istringstream oldStream(oldText);
     std::istringstream newStream(newText);
@@ -650,6 +657,7 @@ std::wstring computeDiffSummary(const std::string& oldText, const std::string& n
 }
 
 
+// Parse the repo folder and populate the commit tree for the current Notepad++ session
 void InitializeCommitTree(const std::wstring& repoFolder)
 {
     // Get all text files from the repo folder.
@@ -724,6 +732,7 @@ static INT_PTR CALLBACK CommitMessageDlgProc(HWND hDlg, UINT message, WPARAM wPa
 }
 
 
+// Use the user's AppData folder to store location for repo between Notepad++ Sessions
 std::wstring GetConfigFilePath() {
     // Retrieve the path to the Local AppData folder.
     wchar_t appDataPath[MAX_PATH];

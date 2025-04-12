@@ -6,7 +6,7 @@
 #include <vector>
 #undef max
 
-
+// Relevant information stored in a commit
 struct CommitInfo {
     int commitNumber;
     std::wstring fileName;
@@ -15,9 +15,11 @@ struct CommitInfo {
 };
 
 
+// Forward declerations
 struct CommitNode;
 
 
+// The "Mods" Stored in the Partially persistent AVL Tree
 struct ModificationRecord {
     enum Field { LEFT, RIGHT, HEIGHT };
     int version;      // commit
@@ -25,23 +27,24 @@ struct ModificationRecord {
     std::shared_ptr<CommitNode> newChild;
     int newHeight;
 
+    // default constructor
     ModificationRecord()
         : version(0), field(LEFT), newChild(nullptr), newHeight(0) {
     }
 
-    // pointer modifications.
+    // pointer modifications
     ModificationRecord(int ver, Field f, std::shared_ptr<CommitNode> child)
         : version(ver), field(f), newChild(child), newHeight(0) {
     }
 
-    // height modification.
+    // height modification
     ModificationRecord(int ver, Field f, int h)
         : version(ver), field(f), newChild(nullptr), newHeight(h) {
     }
 };
 
 
-// A commit node in the partially persistent tree: uses fat node approach from Driscoll
+// A commit node in the partially persistent AVL tree. Uses fat node approach from Driscoll with a fixed mod list
 struct CommitNode {
     int commitCounter;
     std::wstring fileName;
@@ -52,7 +55,7 @@ struct CommitNode {
     std::shared_ptr<CommitNode> right;
 
     // Fat node fields
-    static const int MAX_MODS = 2;
+    static const int MAX_MODS = 5;
     ModificationRecord mods[MAX_MODS];
     int modCount;
 
@@ -63,6 +66,7 @@ struct CommitNode {
 };
 
 
+// Return a node with most up to date fields based off mod list
 std::shared_ptr<CommitNode> getLeft(const std::shared_ptr<CommitNode>& node, int version) {
     if (!node) return nullptr;
     std::shared_ptr<CommitNode> result = node->left;
@@ -75,6 +79,7 @@ std::shared_ptr<CommitNode> getLeft(const std::shared_ptr<CommitNode>& node, int
 }
 
 
+// Return a node with most up to date fields based off mod list
 std::shared_ptr<CommitNode> getRight(const std::shared_ptr<CommitNode>& node, int version) {
     if (!node) return nullptr;
     std::shared_ptr<CommitNode> result = node->right;
@@ -86,6 +91,8 @@ std::shared_ptr<CommitNode> getRight(const std::shared_ptr<CommitNode>& node, in
     return result;
 }
 
+
+// Return height of node using mod list to get most up to date information
 int getHeight(const std::shared_ptr<CommitNode>& node, int version) {
     if (!node) return 0;
     int result = node->height;
@@ -110,6 +117,7 @@ std::shared_ptr<CommitNode> copyFullNode(const std::shared_ptr<CommitNode>& node
 }
 
 
+// updates the left child node, triggers a copy if mod list is full
 std::shared_ptr<CommitNode> updateLeft(const std::shared_ptr<CommitNode>& node,
     const std::shared_ptr<CommitNode>& newLeft, int version) {
     if (!node) return nullptr;
@@ -126,6 +134,7 @@ std::shared_ptr<CommitNode> updateLeft(const std::shared_ptr<CommitNode>& node,
 }
 
 
+// updates the right child node, triggers a copy if mod list is full
 std::shared_ptr<CommitNode> updateRight(const std::shared_ptr<CommitNode>& node,
     const std::shared_ptr<CommitNode>& newRight, int version) {
     if (!node) return nullptr;
@@ -142,6 +151,7 @@ std::shared_ptr<CommitNode> updateRight(const std::shared_ptr<CommitNode>& node,
 }
 
 
+// updates the height of a node, triggers a copy if mod list is full
 std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node,
     int version, int newHeight) {
     if (!node) return nullptr;
@@ -158,6 +168,7 @@ std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node
 }
 
 
+// Perform a right rotation to rebalance tree, leaves old nodes as is and creates new nodes
 std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y, int version) {
     auto x = copyFullNode(getLeft(y, version), version);
     auto T2 = getRight(x, version);
@@ -170,6 +181,8 @@ std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y, in
     return x;
 }
 
+
+// Performs a left rotation to rebalance tree
 std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x, int version) {
     auto y = copyFullNode(getRight(x, version), version);
     auto T2 = getLeft(y, version);
