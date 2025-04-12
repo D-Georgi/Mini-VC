@@ -2,9 +2,8 @@
 #include <memory>
 #include <string>
 #include <windows.h>
-#undef max
 #include <algorithm>
-
+#undef max
 
 struct CommitInfo {
     int commitNumber;
@@ -16,11 +15,11 @@ struct CommitInfo {
 
 // A commit node in the partially persistent tree.
 struct CommitNode {
-    int commitCounter;              // The commit order
-    std::wstring fileName;          // File name for the commit
-    std::wstring diffData;          // text summary of changes vs. the previous version
+    int commitCounter;
+    std::wstring fileName;
+    std::wstring diffData;
     std::wstring commitMessage;
-    int height;                     // Height for balancing (AVL)
+    int height;
     std::shared_ptr<CommitNode> left;
     std::shared_ptr<CommitNode> right;
 

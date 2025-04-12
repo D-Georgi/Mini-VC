@@ -22,6 +22,7 @@
 #include <vector>
 #include <sstream>
 #include <string>
+#include <cstdlib>
 #include <cwchar>
 #include <algorithm>
 #include <cstdio>
@@ -49,6 +50,12 @@ static wchar_t g_commitMsgBuffer[512] = { 0 };
 struct TimelineData {
     std::vector<CommitInfo> commits;
     std::wstring folderPath;
+};
+
+
+struct ViewCommitContext {
+    int currentCommit;           // The commit number currently displayed.
+    std::wstring repoPath;       // The repository folder path.
 };
 
 
@@ -183,18 +190,17 @@ std::string ReadFileAsString(const std::wstring& filePath)
 INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static std::vector<std::wstring>* pFiles = nullptr;
-    static std::wstring folderPath;  // store folder path if needed
+    static std::wstring folderPath;
 
     switch (message)
     {
         case WM_INITDIALOG:
         {
-            // lParam contains pointer to a structure with file list and folder path
             auto* params = reinterpret_cast<std::pair<std::vector<std::wstring>*, std::wstring>*>(lParam);
             pFiles = params->first;
             folderPath = params->second;
 
-            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST); // IDC_FILE_LIST: list box control ID
+            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
 
             // Populate list box
             for (const auto& file : *pFiles)
@@ -355,45 +361,80 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 // dialog procedure for view-only mode.
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static std::string* pFileContent = nullptr;
+    if (message == WM_INITDIALOG) {
+        SetWindowLongPtr(hDlg, GWLP_USERDATA, lParam);
 
-    switch (message)
-    {
-    case WM_INITDIALOG:
-    {
-        pFileContent = reinterpret_cast<std::string*>(lParam);
-        if (pFileContent)
-        {
-            HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
-            int size_needed = MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, NULL, 0);
-            std::wstring wcontent(size_needed, 0);
-            MultiByteToWideChar(CP_UTF8, 0, pFileContent->c_str(), -1, &wcontent[0], size_needed);
-            SetWindowText(hEdit, wcontent.c_str());
-        }
+        ViewCommitContext* pContext = reinterpret_cast<ViewCommitContext*>(lParam);
+        // Load and display the current commit file.
+        std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
+        std::wstring fullPath = pContext->repoPath + L"\\" + commitFileName;
+        std::string fileContents = ReadFileAsString(fullPath);
+
+        // Convert UTF-8 file content to wide string.
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, NULL, 0);
+        std::wstring wcontent(size_needed, 0);
+        MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, &wcontent[0], size_needed);
+
+        HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
+        SetWindowText(hEdit, wcontent.c_str());
+
         return TRUE;
     }
-    case WM_CLOSE:
+
+    if (message == WM_COMMAND)
     {
-        EndDialog(hDlg, IDCANCEL);
-        if (pFileContent)
+        // Retrieve context pointer.
+        ViewCommitContext* pContext = reinterpret_cast<ViewCommitContext*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
+
+        switch (LOWORD(wParam)) {
+        case IDC_PREV:
         {
-            delete pFileContent;
-            pFileContent = nullptr;
-        }
-        return TRUE;
-    }
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK)
-        {
-            EndDialog(hDlg, IDOK);
-            if (pFileContent)
-            {
-                delete pFileContent; // free the allocated string
-                pFileContent = nullptr;
+            // If this is the first commit, do nothing.
+            if (pContext->currentCommit > 1) {
+                pContext->currentCommit--;
+                std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
+                std::wstring fullPath = pContext->repoPath + L"\\" + commitFileName;
+                std::string fileContents = ReadFileAsString(fullPath);
+                int size_needed = MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, NULL, 0);
+                std::wstring wcontent(size_needed, 0);
+                MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, &wcontent[0], size_needed);
+                HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
+                SetWindowText(hEdit, wcontent.c_str());
             }
             return TRUE;
         }
-        break;
+        case IDC_NEXT:
+        {
+            // g_commitCounter is one more than the highest commit number.
+            if (pContext->currentCommit < g_commitCounter - 1) {
+                pContext->currentCommit++;
+                std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
+                std::wstring fullPath = pContext->repoPath + L"\\" + commitFileName;
+                std::string fileContents = ReadFileAsString(fullPath);
+                int size_needed = MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, NULL, 0);
+                std::wstring wcontent(size_needed, 0);
+                MultiByteToWideChar(CP_UTF8, 0, fileContents.c_str(), -1, &wcontent[0], size_needed);
+                HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
+                SetWindowText(hEdit, wcontent.c_str());
+            }
+            return TRUE;
+        }
+        case IDOK:
+        case IDCANCEL:
+        {
+            EndDialog(hDlg, LOWORD(wParam));
+            // Clean up
+            delete pContext;
+            return TRUE;
+        }
+        }
+    }
+
+    if (message == WM_CLOSE) {
+        ViewCommitContext* pContext = reinterpret_cast<ViewCommitContext*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
+        EndDialog(hDlg, IDCANCEL);
+        delete pContext;
+        return TRUE;
     }
     return FALSE;
 }
@@ -401,16 +442,24 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
 void viewCommitInReadOnlyDialog(const std::wstring& fullPath)
 {
-    // Read the commit file content as before.
-    std::string fileContents = ReadFileAsString(fullPath);
-    // Allocate the file content on the heap to pass it safely to the dialog procedure.
-    std::string* pFileContent = new std::string(fileContents);
+    size_t pos1 = fullPath.find(L"commit_");
+    if (pos1 == std::wstring::npos) return;
+    size_t pos2 = fullPath.find(L".txt", pos1);
+    if (pos2 == std::wstring::npos) return;
+    std::wstring numberStr = fullPath.substr(pos1 + 7, pos2 - (pos1 + 7));
+    int commitNum = _wtoi(numberStr.c_str());
+
+    // Allocate and initialize the context.
+    ViewCommitContext* pContext = new ViewCommitContext;
+    pContext->currentCommit = commitNum;
+    pContext->repoPath = g_repoPath;
+
     DialogBoxParam(
         g_hInst,
         MAKEINTRESOURCE(IDD_VIEW_ONLY_DLG),
         nppData._nppHandle,
         ViewOnlyDlgProc,
-        reinterpret_cast<LPARAM>(pFileContent)
+        reinterpret_cast<LPARAM>(pContext)
     );
 }
 

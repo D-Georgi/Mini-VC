@@ -33,7 +33,10 @@
 
 
 #define IDD_VIEW_ONLY_DLG 102
-#define IDC_VIEW_EDIT     1002
+#define IDC_VIEW_EDIT      1002
+#define IDC_PREV           1004
+#define IDC_NEXT           1005
+
 
 
 #define IDD_COMMIT_MSG_DLG 103
