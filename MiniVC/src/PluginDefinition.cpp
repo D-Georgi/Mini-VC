@@ -45,6 +45,7 @@ std::wstring g_repoPath = L"F:\\CSI5610\\Repo";
 std::shared_ptr<CommitNode> g_commitTree = nullptr;
 int g_commitCounter = 1;
 static wchar_t g_commitMsgBuffer[512] = { 0 };
+HWND g_hFileListDlg = NULL;
 
 
 struct TimelineData {
@@ -258,52 +259,53 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
     {
     case WM_INITDIALOG:
     {
-    pData = reinterpret_cast<TimelineData*>(lParam);
-    HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
-    // Enable full row selection.
-    ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
+        g_hFileListDlg = hDlg;
+        pData = reinterpret_cast<TimelineData*>(lParam);
+        HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
+        // Enable full row selection.
+        ListView_SetExtendedListViewStyle(hList, LVS_EX_FULLROWSELECT);
 
-    // Column 0: Commit Number
-    LVCOLUMN lvCol = { 0 };
-    lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-    lvCol.pszText = const_cast<LPWSTR>(L"Commit");
-    lvCol.cx = 50;
-    ListView_InsertColumn(hList, 0, &lvCol);
+        // Column 0: Commit Number
+        LVCOLUMN lvCol = { 0 };
+        lvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
+        lvCol.pszText = const_cast<LPWSTR>(L"Commit");
+        lvCol.cx = 50;
+        ListView_InsertColumn(hList, 0, &lvCol);
 
-    // Column 1: Filename
-    lvCol.pszText = const_cast<LPWSTR>(L"Filename");
-    lvCol.cx = 150;
-    ListView_InsertColumn(hList, 1, &lvCol);
+        // Column 1: Filename
+        lvCol.pszText = const_cast<LPWSTR>(L"Filename");
+        lvCol.cx = 150;
+        ListView_InsertColumn(hList, 1, &lvCol);
 
-    // Column 2: Diff summary
-    lvCol.pszText = const_cast<LPWSTR>(L"Diff");
-    lvCol.cx = 200;
-    ListView_InsertColumn(hList, 2, &lvCol);
+        // Column 2: Diff summary
+        lvCol.pszText = const_cast<LPWSTR>(L"Diff");
+        lvCol.cx = 200;
+        ListView_InsertColumn(hList, 2, &lvCol);
 
-    // Column 3: Commit Message
-    lvCol.pszText = const_cast<LPWSTR>(L"Message");
-    lvCol.cx = 200;
-    ListView_InsertColumn(hList, 3, &lvCol);
+        // Column 3: Commit Message
+        lvCol.pszText = const_cast<LPWSTR>(L"Message");
+        lvCol.cx = 200;
+        ListView_InsertColumn(hList, 3, &lvCol);
 
-    // Populate the list view.
-    for (size_t i = 0; i < pData->commits.size(); i++) {
-        LVITEM lvItem = { 0 };
-        lvItem.mask = LVIF_TEXT;
-        lvItem.iItem = (int)i;
-        // Column 0: commit number
-        std::wstring commitStr = std::to_wstring(pData->commits[i].commitNumber);
-        lvItem.pszText = const_cast<LPWSTR>(commitStr.c_str());
-        ListView_InsertItem(hList, &lvItem);
+        // Populate the list view.
+        for (size_t i = 0; i < pData->commits.size(); i++) {
+            LVITEM lvItem = { 0 };
+            lvItem.mask = LVIF_TEXT;
+            lvItem.iItem = (int)i;
+            // Column 0: commit number
+            std::wstring commitStr = std::to_wstring(pData->commits[i].commitNumber);
+            lvItem.pszText = const_cast<LPWSTR>(commitStr.c_str());
+            ListView_InsertItem(hList, &lvItem);
 
-        // Column 1: filename
-        ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].fileName.c_str()));
+            // Column 1: filename
+            ListView_SetItemText(hList, (int)i, 1, const_cast<LPWSTR>(pData->commits[i].fileName.c_str()));
 
-        // Column 2: diff summary
-        ListView_SetItemText(hList, (int)i, 2, const_cast<LPWSTR>(pData->commits[i].diffData.c_str()));
+            // Column 2: diff summary
+            ListView_SetItemText(hList, (int)i, 2, const_cast<LPWSTR>(pData->commits[i].diffData.c_str()));
 
-        // Column 3: commit message
-        ListView_SetItemText(hList, (int)i, 3, const_cast<LPWSTR>(pData->commits[i].commitMessage.c_str()));
-    }
+            // Column 3: commit message
+            ListView_SetItemText(hList, (int)i, 3, const_cast<LPWSTR>(pData->commits[i].commitMessage.c_str()));
+        }
 
     return TRUE;
     }
@@ -356,13 +358,11 @@ INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 }
 
 
-
 // dialog procedure for view-only commits mode.
 INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_INITDIALOG) {
         SetWindowLongPtr(hDlg, GWLP_USERDATA, lParam);
-
         ViewCommitContext* pContext = reinterpret_cast<ViewCommitContext*>(lParam);
         // Load and display the current commit file.
         std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
@@ -376,21 +376,19 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
         HWND hEdit = GetDlgItem(hDlg, IDC_VIEW_EDIT);
         SetWindowText(hEdit, wcontent.c_str());
-
         return TRUE;
     }
 
-    if (message == WM_COMMAND)
-    {
+    if (message == WM_COMMAND) {
         // Retrieve context pointer.
         ViewCommitContext* pContext = reinterpret_cast<ViewCommitContext*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
 
         switch (LOWORD(wParam)) {
         case IDC_PREV:
         {
-            // If this is the first commit, do nothing.
-            if (pContext->currentCommit > 1) {
-                pContext->currentCommit--;
+            auto pred = getPredecessor(g_commitTree, pContext->currentCommit, g_commitCounter - 1);
+            if (pred) {
+                pContext->currentCommit = pred->commitCounter;
                 std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
                 std::wstring fullPath = pContext->repoPath + L"\\" + commitFileName;
                 std::string fileContents = ReadFileAsString(fullPath);
@@ -404,9 +402,9 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
         }
         case IDC_NEXT:
         {
-            // g_commitCounter is one more than the highest commit number.
-            if (pContext->currentCommit < g_commitCounter - 1) {
-                pContext->currentCommit++;
+            auto succ = getSuccessor(g_commitTree, pContext->currentCommit, g_commitCounter - 1);
+            if (succ) {
+                pContext->currentCommit = succ->commitCounter;
                 std::wstring commitFileName = L"commit_" + std::to_wstring(pContext->currentCommit) + L".txt";
                 std::wstring fullPath = pContext->repoPath + L"\\" + commitFileName;
                 std::string fileContents = ReadFileAsString(fullPath);
@@ -418,11 +416,61 @@ INT_PTR CALLBACK ViewOnlyDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
             }
             return TRUE;
         }
+        case IDC_ROLLBACK:
+        {
+            // Confirm rollback with the user.
+            int confirm = MessageBox(hDlg,
+                L"Are you sure you want to rollback? This will permanently remove all commits newer than the currently viewed commit.",
+                L"Confirm Rollback", MB_YESNO | MB_ICONWARNING);
+            if (confirm == IDYES) {
+                int rollbackCommit = pContext->currentCommit;
+
+                // Delete all commit files with commit numbers greater than the currently viewed commit.
+                for (int i = rollbackCommit + 1; i < g_commitCounter; i++) {
+                    std::wstring commitFileName = L"commit_" + std::to_wstring(i) + L".txt";
+                    std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
+                    _wremove(fullPath.c_str());
+
+                    std::wstring diffFileName = L"commit_" + std::to_wstring(i) + L".diff";
+                    std::wstring diffFullPath = g_repoPath + L"\\" + diffFileName;
+                    _wremove(diffFullPath.c_str());
+
+                    std::wstring msgFileName = L"commit_" + std::to_wstring(i) + L".msg";
+                    std::wstring msgFullPath = g_repoPath + L"\\" + msgFileName;
+                    _wremove(msgFullPath.c_str());
+                }
+
+                // Update the commit counter so that it is one more than the rollback commit.
+                g_commitCounter = rollbackCommit + 1;
+
+                // Reinitialize the commit tree from the repository (only the remaining commits will be loaded).
+                InitializeCommitTree(g_repoPath);
+
+                // Load the rollback commit into Notepad++.
+                int which = -1;
+                ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
+                if (which != -1) {
+                    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+                    std::wstring commitFileName = L"commit_" + std::to_wstring(rollbackCommit) + L".txt";
+                    std::wstring fullPath = g_repoPath + L"\\" + commitFileName;
+                    std::string fileContents = ReadFileAsString(fullPath);
+                    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
+                }
+
+                if (g_hFileListDlg != NULL) {
+                    EndDialog(g_hFileListDlg, IDC_ROLLBACK);
+                    g_hFileListDlg = NULL;
+                }
+
+                MessageBox(hDlg, L"Rollback successful.", L"Rollback", MB_OK);
+                EndDialog(hDlg, IDC_ROLLBACK);
+            }
+            return TRUE;
+        }
         case IDOK:
         case IDCANCEL:
         {
             EndDialog(hDlg, LOWORD(wParam));
-            // Clean up
             delete pContext;
             return TRUE;
         }
@@ -476,7 +524,12 @@ void openVersionedFile()
 
     // Build a vector of commit pairs (commit number and filename) by in-order traversal.
     std::vector<CommitInfo> commitList;
-    InOrderTraversal(g_commitTree, g_commitCounter - 1, commitList);
+    for (int i = 1; i < g_commitCounter; i++) {
+        auto node = searchCommit(g_commitTree, i, g_commitCounter - 1);
+        if (node) {
+            commitList.push_back({ node->commitCounter, node->fileName, node->diffData, node->commitMessage });
+        }
+    }
     if (commitList.empty())
     {
         ::MessageBox(NULL, TEXT("No commits available."), TEXT("Info"), MB_OK);

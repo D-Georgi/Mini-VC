@@ -240,10 +240,44 @@ std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, 
 }
 
 
-void InOrderTraversal(const std::shared_ptr<CommitNode>& node, int version, std::vector<CommitInfo>& commits) {
-    if (!node)
-        return;
-    InOrderTraversal(getLeft(node, version), version, commits);
-    commits.push_back({ node->commitCounter, node->fileName, node->diffData, node->commitMessage });
-    InOrderTraversal(getRight(node, version), version, commits);
+std::shared_ptr<CommitNode> searchCommit(const std::shared_ptr<CommitNode>& node, int targetCommit, int version) {
+    if (!node) return nullptr;
+    if (targetCommit == node->commitCounter)
+        return node;
+    else if (targetCommit < node->commitCounter)
+        return searchCommit(getLeft(node, version), targetCommit, version);
+    else
+        return searchCommit(getRight(node, version), targetCommit, version);
+}
+
+
+std::shared_ptr<CommitNode> getSuccessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
+    std::shared_ptr<CommitNode> successor = nullptr;
+    auto current = root;
+    while (current) {
+        if (commitNumber < current->commitCounter) {
+            successor = current;
+            current = getLeft(current, version);
+        }
+        else {
+            current = getRight(current, version);
+        }
+    }
+    return successor;
+}
+
+
+std::shared_ptr<CommitNode> getPredecessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
+    std::shared_ptr<CommitNode> predecessor = nullptr;
+    auto current = root;
+    while (current) {
+        if (commitNumber > current->commitCounter) {
+            predecessor = current;
+            current = getRight(current, version);
+        }
+        else {
+            current = getLeft(current, version);
+        }
+    }
+    return predecessor;
 }
