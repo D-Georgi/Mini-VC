@@ -70,7 +70,7 @@ Text editors are a challenge to make, Notepad++ plugins are a slightly less chal
 
 ## Important Files
 
-There are a lot of files in this project. The files I worked on are found in 'MiniVC/src' directory. Descriptions of each file are:
+There are a lot of files in this project. The files I worked on are found in `MiniVC/src` directory. Descriptions of each file I worked on are:
 
 1. `DockingFeature/resource.h`: A header file defining elements needed for popup windows used by plugin
 2. `NppPluginDemo.rc`: A resource file that specifies the shapes, sizes, and layouts of the popup windows used
@@ -78,3 +78,4 @@ There are a lot of files in this project. The files I worked on are found in 'Mi
 4. `PluginDefinition.cpp`: A C++ file that has all the implementation of the plugin's functionality and window management. This file utilizes the commitTree datastructure to handle all of the version control logic
 5. `CommitTree.h`: A header file that implements the CommitTree, a partially persistent AVL tree data structure. I chose to use this as the datastructure as it will allow for the branching in the future with relative ease
 
+Any other files in the `MiniVC/src` directory come from Notepad++ plugin template and are not modified
