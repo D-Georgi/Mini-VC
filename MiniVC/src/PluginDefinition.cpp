@@ -188,70 +188,8 @@ std::string ReadFileAsString(const std::wstring& filePath)
     return oss.str();
 }
 
-INT_PTR CALLBACK FileListDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    static std::vector<std::wstring>* pFiles = nullptr;
-    static std::wstring folderPath;
 
-    switch (message)
-    {
-        case WM_INITDIALOG:
-        {
-            auto* params = reinterpret_cast<std::pair<std::vector<std::wstring>*, std::wstring>*>(lParam);
-            pFiles = params->first;
-            folderPath = params->second;
-
-            HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
-
-            // Populate list box
-            for (const auto& file : *pFiles)
-            {
-                SendMessage(hList, LB_ADDSTRING, 0, (LPARAM)file.c_str());
-            }
-            return TRUE;
-        }
-        case WM_COMMAND:
-        {
-            if (LOWORD(wParam) == IDOK)
-            {
-                HWND hList = GetDlgItem(hDlg, IDC_FILE_LIST);
-                int sel = (int)SendMessage(hList, LB_GETCURSEL, 0, 0);
-                if (sel != LB_ERR)
-                {
-                    wchar_t fileName[260];
-                    SendMessage(hList, LB_GETTEXT, sel, (LPARAM)fileName);
-
-                    // Build the full file path:
-                    std::wstring fullPath = folderPath + L"\\" + fileName;
-
-                    // Read the contents of the selected file:
-                    std::string fileContents = ReadFileAsString(fullPath);
-
-                    // Get the current Scintilla editor:
-                    int which = -1;
-                    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
-                    if (which != -1)
-                    {
-                        HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
-
-                        // Overwrite the current document with the file contents:
-                        ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)fileContents.c_str());
-                    }
-                }
-                EndDialog(hDlg, IDOK);
-            }
-            else if (LOWORD(wParam) == IDCANCEL)
-            {
-                EndDialog(hDlg, IDCANCEL);
-            }
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
-
+//Function to list all commits in order
 INT_PTR CALLBACK TimelineDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static TimelineData* pData = nullptr;
@@ -581,6 +519,7 @@ void setRepoLocation()
     {
         g_repoPath = chosenFolder;
         SaveRepoPath(chosenFolder);
+        g_commitTree = nullptr;
         InitializeCommitTree(g_repoPath);
         std::wstring msg = L"Repository location set to:\n" + chosenFolder;
         ::MessageBox(NULL, msg.c_str(), L"Repository Location", MB_OK);

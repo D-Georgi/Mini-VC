@@ -195,7 +195,7 @@ std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x, int
     return y;
 }
 
-
+//adding a new node to the commit tree, performs balance checks and balances accordingly
 std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, int commitCounter,
     const std::wstring& fileName, const std::wstring& diffData,
     const std::wstring& commitMessage = L"") {
@@ -239,7 +239,7 @@ std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, 
     return newRoot;
 }
 
-
+//returns a commit node with the desired commit version
 std::shared_ptr<CommitNode> searchCommit(const std::shared_ptr<CommitNode>& node, int targetCommit, int version) {
     if (!node) return nullptr;
     if (targetCommit == node->commitCounter)
@@ -250,7 +250,7 @@ std::shared_ptr<CommitNode> searchCommit(const std::shared_ptr<CommitNode>& node
         return searchCommit(getRight(node, version), targetCommit, version);
 }
 
-
+//returns the commit after this current commit that is viewed
 std::shared_ptr<CommitNode> getSuccessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
     std::shared_ptr<CommitNode> successor = nullptr;
     auto current = root;
@@ -266,7 +266,7 @@ std::shared_ptr<CommitNode> getSuccessor(const std::shared_ptr<CommitNode>& root
     return successor;
 }
 
-
+//returns the commit before this current commit that is viewed
 std::shared_ptr<CommitNode> getPredecessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
     std::shared_ptr<CommitNode> predecessor = nullptr;
     auto current = root;
