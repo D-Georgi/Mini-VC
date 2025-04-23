@@ -50,7 +50,7 @@ David Georgi
 
 If you wish to modify or rebuild the plugin yourself:
 
-1. Ensure you have Windows and Visual Studio installed.
+1. Ensure you have Windows and Visual Studio installed, do NOT launch Notepad++ yet.
 2. Download or clone this repository.
 3. Open the `MiniVC` folder.
 4. Open the `vs.proj` subfolder and load the `MiniVC.sln` solution in Visual Studio.
