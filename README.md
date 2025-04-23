@@ -20,8 +20,7 @@ David Georgi
 
 ## Prerequisites
 
-- **Operating System:** Windows
-- **Editor:** Notepad++
+- **Operating System:** Windows (bundled Notepad++ included in this repo)
 - **Development (only for building from source):** Visual Studio
 
 ---
@@ -30,13 +29,9 @@ David Georgi
 
 1. Download or clone this repository.
 2. Open the `MiniVC` folder.
-3. Copy the entire `Notepad++` directory into your Notepad++ installation folder (e.g., `C:\Program Files\Notepad++`).
-4. Launch Notepad++ (`notepad++.exe`).
-5. Navigate to the **Plugins** tab and locate **MiniVC** in the menu.
-6. Under **MiniVC**, select **Set Repo Location** and follow the prompts to choose (or create) a folder for your local repository.
-
----
-
+3. Open the included `Notepad++` directory and run `notepad++.exe`.
+4. Navigate to the **Plugins** tab and locate **MiniVC** in the menu.
+5. Under **MiniVC**, select **Set Repo Location** and follow the prompts to choose (or create) a folder for your local repository.
 ## Using the Plugin
 
 1. Open or create a `.txt` document in Notepad++.
