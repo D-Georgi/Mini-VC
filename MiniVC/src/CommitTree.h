@@ -3,8 +3,10 @@
 #include <string>
 #include <windows.h>
 #include <algorithm>
+#include <vector>
 #undef max
 
+// Relevant information stored in a commit
 struct CommitInfo {
     int commitNumber;
     std::wstring fileName;
@@ -13,7 +15,36 @@ struct CommitInfo {
 };
 
 
-// A commit node in the partially persistent tree.
+// Forward declerations
+struct CommitNode;
+
+
+// The "Mods" Stored in the Partially persistent AVL Tree
+struct ModificationRecord {
+    enum Field { LEFT, RIGHT, HEIGHT };
+    int version;      // commit
+    Field field;
+    std::shared_ptr<CommitNode> newChild;
+    int newHeight;
+
+    // default constructor
+    ModificationRecord()
+        : version(0), field(LEFT), newChild(nullptr), newHeight(0) {
+    }
+
+    // pointer modifications
+    ModificationRecord(int ver, Field f, std::shared_ptr<CommitNode> child)
+        : version(ver), field(f), newChild(child), newHeight(0) {
+    }
+
+    // height modification
+    ModificationRecord(int ver, Field f, int h)
+        : version(ver), field(f), newChild(nullptr), newHeight(h) {
+    }
+};
+
+
+// A commit node in the partially persistent AVL tree. Uses fat node approach from Driscoll with a fixed mod list
 struct CommitNode {
     int commitCounter;
     std::wstring fileName;
@@ -23,118 +54,230 @@ struct CommitNode {
     std::shared_ptr<CommitNode> left;
     std::shared_ptr<CommitNode> right;
 
+    // Fat node fields
+    static const int MAX_MODS = 5;
+    ModificationRecord mods[MAX_MODS];
+    int modCount;
+
     CommitNode(int counter, const std::wstring& fname, const std::wstring& diff = L"", const std::wstring& msg = L"")
-        : commitCounter(counter), fileName(fname), diffData(diff), commitMessage(msg), height(1), left(nullptr), right(nullptr) {
+        : commitCounter(counter), fileName(fname), diffData(diff), commitMessage(msg),
+        height(1), left(nullptr), right(nullptr), modCount(0) {
     }
 };
 
 
-// Return the height of a node (or 0 if null).
-int height(const std::shared_ptr<CommitNode>& node) {
-    return node ? node->height : 0;
+// Return a node with most up to date fields based off mod list
+std::shared_ptr<CommitNode> getLeft(const std::shared_ptr<CommitNode>& node, int version) {
+    if (!node) return nullptr;
+    std::shared_ptr<CommitNode> result = node->left;
+    for (int i = 0; i < node->modCount; i++) {
+        if (node->mods[i].field == ModificationRecord::LEFT && node->mods[i].version <= version) {
+            result = node->mods[i].newChild;
+        }
+    }
+    return result;
 }
 
 
-// Create a copy of the node and update its height.
-std::shared_ptr<CommitNode> copyNode(const std::shared_ptr<CommitNode>& node) {
+// Return a node with most up to date fields based off mod list
+std::shared_ptr<CommitNode> getRight(const std::shared_ptr<CommitNode>& node, int version) {
+    if (!node) return nullptr;
+    std::shared_ptr<CommitNode> result = node->right;
+    for (int i = 0; i < node->modCount; i++) {
+        if (node->mods[i].field == ModificationRecord::RIGHT && node->mods[i].version <= version) {
+            result = node->mods[i].newChild;
+        }
+    }
+    return result;
+}
+
+
+// Return height of node using mod list to get most up to date information
+int getHeight(const std::shared_ptr<CommitNode>& node, int version) {
+    if (!node) return 0;
+    int result = node->height;
+    for (int i = 0; i < node->modCount; i++) {
+        if (node->mods[i].field == ModificationRecord::HEIGHT && node->mods[i].version <= version) {
+            result = node->mods[i].newHeight;
+        }
+    }
+    return result;
+}
+
+
+// full mod list triggers a new node and leaves old node alone
+std::shared_ptr<CommitNode> copyFullNode(const std::shared_ptr<CommitNode>& node, int version) {
     if (!node) return nullptr;
     auto newNode = std::make_shared<CommitNode>(node->commitCounter, node->fileName, node->diffData, node->commitMessage);
-    newNode->left = node->left;
-    newNode->right = node->right;
-    newNode->height = node->height;
+    newNode->left = getLeft(node, version);
+    newNode->right = getRight(node, version);
+    newNode->height = getHeight(node, version);
+    newNode->modCount = 0;
     return newNode;
 }
 
 
-// Update the height based on the children.
-std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node) {
-    if (node)
-        node->height = 1 + std::max(height(node->left), height(node->right));
-    return node;
+// updates the left child node, triggers a copy if mod list is full
+std::shared_ptr<CommitNode> updateLeft(const std::shared_ptr<CommitNode>& node,
+    const std::shared_ptr<CommitNode>& newLeft, int version) {
+    if (!node) return nullptr;
+    if (node->modCount < CommitNode::MAX_MODS) {
+        node->mods[node->modCount] = ModificationRecord(version, ModificationRecord::LEFT, newLeft);
+        node->modCount++;
+        return node;
+    }
+    else {
+        auto newNode = copyFullNode(node, version);
+        newNode->left = newLeft;
+        return newNode;
+    }
 }
 
 
-// Get the balance factor of a node.
-int getBalance(const std::shared_ptr<CommitNode>& node) {
-    return node ? height(node->left) - height(node->right) : 0;
+// updates the right child node, triggers a copy if mod list is full
+std::shared_ptr<CommitNode> updateRight(const std::shared_ptr<CommitNode>& node,
+    const std::shared_ptr<CommitNode>& newRight, int version) {
+    if (!node) return nullptr;
+    if (node->modCount < CommitNode::MAX_MODS) {
+        node->mods[node->modCount] = ModificationRecord(version, ModificationRecord::RIGHT, newRight);
+        node->modCount++;
+        return node;
+    }
+    else {
+        auto newNode = copyFullNode(node, version);
+        newNode->right = newRight;
+        return newNode;
+    }
 }
 
 
-std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y) {
-    // Copy nodes for path copying.
-    auto x = copyNode(y->left);
-    auto T2 = x->right;
+// updates the height of a node, triggers a copy if mod list is full
+std::shared_ptr<CommitNode> updateHeight(const std::shared_ptr<CommitNode>& node,
+    int version, int newHeight) {
+    if (!node) return nullptr;
+    if (node->modCount < CommitNode::MAX_MODS) {
+        node->mods[node->modCount] = ModificationRecord(version, ModificationRecord::HEIGHT, newHeight);
+        node->modCount++;
+        return node;
+    }
+    else {
+        auto newNode = copyFullNode(node, version);
+        newNode->height = newHeight;
+        return newNode;
+    }
+}
 
-    // Rotate: create new version of y with updated left pointer.
-    auto newY = copyNode(y);
-    newY->left = T2;
-    updateHeight(newY);
 
-    // create new version of x and attach newY.
-    x->right = newY;
-    updateHeight(x);
+// Perform a right rotation to rebalance tree, leaves old nodes as is and creates new nodes
+std::shared_ptr<CommitNode> rightRotate(const std::shared_ptr<CommitNode>& y, int version) {
+    auto x = copyFullNode(getLeft(y, version), version);
+    auto T2 = getRight(x, version);
+    auto newY = updateLeft(y, T2, version);
+    newY = updateHeight(newY, version, 1 + std::max(getHeight(getLeft(newY, version), version),
+        getHeight(getRight(newY, version), version)));
+    x = updateRight(x, newY, version);
+    x = updateHeight(x, version, 1 + std::max(getHeight(getLeft(x, version), version),
+        getHeight(getRight(x, version), version)));
     return x;
 }
 
 
-std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x) {
-    auto y = copyNode(x->right);
-    auto T2 = y->left;
-
-    auto newX = copyNode(x);
-    newX->right = T2;
-    updateHeight(newX);
-
-    y->left = newX;
-    updateHeight(y);
+// Performs a left rotation to rebalance tree
+std::shared_ptr<CommitNode> leftRotate(const std::shared_ptr<CommitNode>& x, int version) {
+    auto y = copyFullNode(getRight(x, version), version);
+    auto T2 = getLeft(y, version);
+    auto newX = updateRight(x, T2, version);
+    newX = updateHeight(newX, version, 1 + std::max(getHeight(getLeft(newX, version), version),
+        getHeight(getRight(newX, version), version)));
+    y = updateLeft(y, newX, version);
+    y = updateHeight(y, version, 1 + std::max(getHeight(getLeft(y, version), version),
+        getHeight(getRight(y, version), version)));
     return y;
 }
 
-
-std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, int commitCounter, const std::wstring& fileName, const std::wstring& diffData, const std::wstring& commitMessage = L"") {
+//adding a new node to the commit tree, performs balance checks and balances accordingly
+std::shared_ptr<CommitNode> insertNode(const std::shared_ptr<CommitNode>& root, int commitCounter,
+    const std::wstring& fileName, const std::wstring& diffData,
+    const std::wstring& commitMessage = L"") {
+    int version = commitCounter;  // Each new insertion uses its commit number as its version.
     if (!root)
         return std::make_shared<CommitNode>(commitCounter, fileName, diffData, commitMessage);
 
-    auto newRoot = copyNode(root);
-    if (commitCounter < newRoot->commitCounter)
-        newRoot->left = insertNode(newRoot->left, commitCounter, fileName, diffData, commitMessage);
-    else
-        newRoot->right = insertNode(newRoot->right, commitCounter, fileName, diffData, commitMessage);
-
-    updateHeight(newRoot);
-
-    // Balance the tree.
-    int balance = getBalance(newRoot);
-
-    // Left Left case
-    if (balance > 1 && commitCounter < newRoot->left->commitCounter)
-        return rightRotate(newRoot);
-
-    // Right Right case
-    if (balance < -1 && commitCounter > newRoot->right->commitCounter)
-        return leftRotate(newRoot);
-
-    // Left Right case
-    if (balance > 1 && commitCounter > newRoot->left->commitCounter) {
-        newRoot->left = leftRotate(newRoot->left);
-        return rightRotate(newRoot);
+    // “Copy” the root using its effective fields for the current version.
+    auto newRoot = copyFullNode(root, version);
+    if (commitCounter < newRoot->commitCounter) {
+        auto updatedLeft = insertNode(getLeft(newRoot, version), commitCounter, fileName, diffData, commitMessage);
+        newRoot = updateLeft(newRoot, updatedLeft, version);
     }
-
-    // Right Left case
-    if (balance < -1 && commitCounter < newRoot->right->commitCounter) {
-        newRoot->right = rightRotate(newRoot->right);
-        return leftRotate(newRoot);
+    else {
+        auto updatedRight = insertNode(getRight(newRoot, version), commitCounter, fileName, diffData, commitMessage);
+        newRoot = updateRight(newRoot, updatedRight, version);
     }
+    int newHeight = 1 + std::max(getHeight(getLeft(newRoot, version), version), getHeight(getRight(newRoot, version), version));
+    newRoot = updateHeight(newRoot, version, newHeight);
 
+    int balance = getHeight(getLeft(newRoot, version), version) - getHeight(getRight(newRoot, version), version);
+
+    // left left
+    if (balance > 1 && commitCounter < getLeft(newRoot, version)->commitCounter)
+        return rightRotate(newRoot, version);
+    // right right
+    if (balance < -1 && commitCounter >= getRight(newRoot, version)->commitCounter)
+        return leftRotate(newRoot, version);
+    // left right 
+    if (balance > 1 && commitCounter >= getLeft(newRoot, version)->commitCounter) {
+        auto updatedLeft = leftRotate(getLeft(newRoot, version), version);
+        newRoot = updateLeft(newRoot, updatedLeft, version);
+        return rightRotate(newRoot, version);
+    }
+    // right left 
+    if (balance < -1 && commitCounter < getRight(newRoot, version)->commitCounter) {
+        auto updatedRight = rightRotate(getRight(newRoot, version), version);
+        newRoot = updateRight(newRoot, updatedRight, version);
+        return leftRotate(newRoot, version);
+    }
     return newRoot;
 }
 
+//returns a commit node with the desired commit version
+std::shared_ptr<CommitNode> searchCommit(const std::shared_ptr<CommitNode>& node, int targetCommit, int version) {
+    if (!node) return nullptr;
+    if (targetCommit == node->commitCounter)
+        return node;
+    else if (targetCommit < node->commitCounter)
+        return searchCommit(getLeft(node, version), targetCommit, version);
+    else
+        return searchCommit(getRight(node, version), targetCommit, version);
+}
 
-void InOrderTraversal(const std::shared_ptr<CommitNode>& node,
-    std::vector<CommitInfo>& commits)
-{
-    if (!node) return;
-    InOrderTraversal(node->left, commits);
-    commits.push_back({ node->commitCounter, node->fileName, node->diffData, node->commitMessage });
-    InOrderTraversal(node->right, commits);
+//returns the commit after this current commit that is viewed
+std::shared_ptr<CommitNode> getSuccessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
+    std::shared_ptr<CommitNode> successor = nullptr;
+    auto current = root;
+    while (current) {
+        if (commitNumber < current->commitCounter) {
+            successor = current;
+            current = getLeft(current, version);
+        }
+        else {
+            current = getRight(current, version);
+        }
+    }
+    return successor;
+}
+
+//returns the commit before this current commit that is viewed
+std::shared_ptr<CommitNode> getPredecessor(const std::shared_ptr<CommitNode>& root, int commitNumber, int version) {
+    std::shared_ptr<CommitNode> predecessor = nullptr;
+    auto current = root;
+    while (current) {
+        if (commitNumber > current->commitCounter) {
+            predecessor = current;
+            current = getRight(current, version);
+        }
+        else {
+            current = getLeft(current, version);
+        }
+    }
+    return predecessor;
 }
