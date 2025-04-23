@@ -31,7 +31,10 @@ David Georgi
 2. Open the `MiniVC` folder.
 3. Open the included `Notepad++` directory and run `notepad++.exe`.
 4. Navigate to the **Plugins** tab and locate **MiniVC** in the menu.
-5. Under **MiniVC**, select **Set Repo Location** and follow the prompts to choose (or create) a folder for your local repository.
+5. Under **MiniVC**, select **Set Repo Location** and follow the prompts to choose (or create) a folder for your local repository. 
+
+   > **Tip:** A `Sample_Repo` folder is provided in this repo. If you’d like to explore without creating a new repository, select `Sample_Repo` as your repo location.
+
 ## Using the Plugin
 
 1. Open or create a `.txt` document in Notepad++.
